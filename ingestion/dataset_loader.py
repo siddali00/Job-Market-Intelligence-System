@@ -1,8 +1,8 @@
 """
 Bulk Kaggle dataset loader — historical job data seed.
 
-Loads 6 complementary datasets covering 2020–2025 across different platforms,
-roles, and geographies.  All datasets are one-time seeds; live data comes from
+Loads selected datasets across platforms, roles, and geographies.
+All datasets are one-time seeds; live data comes from
 Adzuna + Remotive APIs on the recurring schedule.
 
 Processing strategy
@@ -17,12 +17,13 @@ chunksize=50_000, which is slightly slower but equally complete.
 
 Dataset catalogue
 -----------------
-  lukebarousse   / data-analyst-job-postings-google-search  785 K  2022-23  Data
-  asaniczka      / 1-3m-linkedin-jobs-and-skills-2024       1.3 M  2024     All
-  asaniczka      / data-science-job-postings-and-skills      ~50 K  2024     DS/ML
-  ruchi798       / data-science-job-salaries                ~600 K  2020-23  Salary
-  christopherkverne / 100k-us-tech-jobs-winter-2024         100 K  2024     US Tech
-  pratyushpuri   / global-ai-job-market-trend-2025           ~15 K  2025     AI/ML
+  bismasajjad      / global-ai-job-market-and-salary-trends-2025
+  mexwell          / us-software-engineer-jobs
+  mohankrishnathalla / global-ai-and-data-jobs-salary-dataset
+  christopherkverne / 100k-us-tech-jobs-winter-2024
+  alitaqishah      / ai-jobs-market-2025-2026-salaries
+  tianyimasf       / linkedin-data-job-titles-and-postings
+  mueezraja        / ai-data-science-job-market
 
 Raw storage (Bronze)
 ---------------------
@@ -41,6 +42,7 @@ import pandas as pd
 
 from config.settings import get_settings
 from ingestion.base_ingester import BaseIngester
+from ingestion.kaggle_raw_store import KaggleRawStore
 from monitoring.logger import get_logger
 
 logger   = get_logger(__name__)
@@ -51,27 +53,54 @@ BRONZE_BATCH_SIZE = 50_000   # rows per bronze JSON file — keeps files managea
 # ── Dataset registry ──────────────────────────────────────────────────────────
 
 DATASETS: dict[str, tuple[str, str]] = {
-    "lukebarousse":    ("lukebarousse/data-analyst-job-postings-google-search",
-                        "785K data analyst/engineer postings 2022-23"),
-    "linkedin_2024":   ("asaniczka/1-3m-linkedin-jobs-and-skills-2024",
-                        "1.3M LinkedIn postings 2024, all tech roles"),
-    "ds_postings_2024":("asaniczka/data-science-job-postings-and-skills",
-                        "~50K data science postings 2024 with skills"),
-    "ds_salaries":     ("ruchi798/data-science-job-salaries",
-                        "~600K salary records 2020-23"),
-    "us_tech_2024":    ("christopherkverne/100k-us-tech-jobs-winter-2024",
-                        "100K US tech jobs Winter 2024"),
-    "ai_market_2025":  ("pratyushpuri/global-ai-job-market-trend-2025",
-                        "~15K global AI/ML job market trends 2025"),
+    "global_ai_trends_2025": (
+        "bismasajjad/global-ai-job-market-and-salary-trends-2025",
+        "Global AI jobs and salary trends (2025)",
+    ),
+    "us_software_engineer_jobs": (
+        "mexwell/us-software-engineer-jobs",
+        "US software engineer job postings",
+    ),
+    "global_ai_data_salary": (
+        "mohankrishnathalla/global-ai-and-data-jobs-salary-dataset",
+        "Global AI/data jobs salary dataset",
+    ),
+    "us_tech_2024": (
+        "christopherkverne/100k-us-tech-jobs-winter-2024",
+        "100K US tech jobs Winter 2024",
+    ),
+    "ai_jobs_2025_2026": (
+        "alitaqishah/ai-jobs-market-2025-2026-salaries",
+        "AI jobs market 2025-2026 with salaries",
+    ),
+    "linkedin_data_jobs": (
+        "tianyimasf/linkedin-data-job-titles-and-postings",
+        "LinkedIn data job titles and postings",
+    ),
+    "ai_data_science_market": (
+        "mueezraja/ai-data-science-job-market",
+        "AI and data science job market records",
+    ),
+    "job_descriptions_2025": (
+        "adityarajsrv/job-descriptions-2025-tech-and-non-tech-roles",
+        "Job descriptions 2025 across tech and non-tech roles",
+    ),
+    "ai_society": (
+        "sarcasmos/ai-society",
+        "AI society jobs/salary related dataset",
+    ),
 }
 
 DATASET_YEARS: dict[str, int] = {
-    "lukebarousse":     2023,
-    "linkedin_2024":    2024,
-    "ds_postings_2024": 2024,
-    "ds_salaries":      2023,
-    "us_tech_2024":     2024,
-    "ai_market_2025":   2025,
+    "global_ai_trends_2025":      2025,
+    "us_software_engineer_jobs":  2024,
+    "global_ai_data_salary":      2025,
+    "us_tech_2024":               2024,
+    "ai_jobs_2025_2026":          2026,
+    "linkedin_data_jobs":         2025,
+    "ai_data_science_market":     2025,
+    "job_descriptions_2025":      2025,
+    "ai_society":                 2025,
 }
 
 
@@ -80,10 +109,12 @@ DATASET_YEARS: dict[str, int] = {
 class KaggleDatasetLoader(BaseIngester):
     source_name = "kaggle"
 
-    def __init__(self, dataset_keys: list[str] | None = None) -> None:
+    def __init__(self, dataset_keys: list[str] | None = None, run_id: str | None = None) -> None:
         super().__init__()
         self.dataset_keys = dataset_keys or list(DATASETS.keys())
+        self.run_id = run_id
         self._total_records = 0
+        self._raw_store = KaggleRawStore(run_id=run_id)
 
     def run(self) -> dict:
         self._set_kaggle_env()
@@ -136,8 +167,10 @@ class KaggleDatasetLoader(BaseIngester):
             # Quick column sniff — skip non-job files before loading fully
             try:
                 header_df = pd.read_csv(csv_path, nrows=0)
-                col_map   = _column_map(key, list(header_df.columns))
+                cols      = list(header_df.columns)
+                col_map   = _column_map(key, cols)
                 if not col_map.get("title"):
+                    self._process_raw_only_csv(key, csv_path)
                     logger.info("kaggle_skip_file",
                                 extra={"file": csv_path.name, "reason": "no title column"})
                     continue
@@ -145,11 +178,11 @@ class KaggleDatasetLoader(BaseIngester):
                 continue
 
             try:
-                page = self._process_spark_file(key, slug, csv_path, year, page)
+                page = self._process_spark_file(key, slug, csv_path, year, page, cols)
             except Exception as exc:
                 logger.warning("spark_fallback",
                                extra={"key": key, "file": csv_path.name, "reason": str(exc)})
-                page = self._process_pandas_file(key, slug, csv_path, year, page)
+                page = self._process_pandas_file(key, slug, csv_path, year, page, cols)
 
             total_for_dataset += 0   # counts are added inside helpers via self._total_records
 
@@ -167,7 +200,7 @@ class KaggleDatasetLoader(BaseIngester):
 
     def _process_spark_file(
         self, key: str, slug: str,
-        csv_path: Path, year: int | None, page: int,
+        csv_path: Path, year: int | None, page: int, cols: list[str],
     ) -> int:
         """Read one CSV with Spark, stream rows to driver, write bronze in batches.
         Batch counter is per-dataset (resets to 1 for each key).
@@ -176,7 +209,6 @@ class KaggleDatasetLoader(BaseIngester):
         spark = _get_or_create_spark()
 
         df   = spark.read.csv(str(csv_path), header=True, inferSchema=False)
-        cols = df.columns
         col_map = _column_map(key, cols)
 
         logger.info("spark_reading_csv",
@@ -184,11 +216,16 @@ class KaggleDatasetLoader(BaseIngester):
                            "partitions": df.rdd.getNumPartitions()})
 
         batch: list[dict] = []
+        raw_batch: list[dict] = []
         total = 0
+        raw_total = 0
+        row_num = 0
         batch_num = 1   # per-dataset counter — readable filenames
 
         for spark_row in df.toLocalIterator():
             row    = spark_row.asDict()
+            row_num += 1
+            raw_batch.append(row)
             record = _build_envelope(key, row, slug, year, col_map)
             if record and record.get("title", "").strip():
                 batch.append(record)
@@ -197,34 +234,59 @@ class KaggleDatasetLoader(BaseIngester):
                     total    += len(batch)
                     batch     = []
                     batch_num += 1
+            if len(raw_batch) >= BRONZE_BATCH_SIZE:
+                raw_total += self._raw_store.insert_rows(
+                    key,
+                    csv_path.name,
+                    raw_batch,
+                    row_start=row_num - len(raw_batch) + 1,
+                )
+                raw_batch = []
 
         if batch:
             self.save_to_bronze(batch, page=batch_num, subfolder=key)
             total += len(batch)
+        if raw_batch:
+            raw_total += self._raw_store.insert_rows(
+                key,
+                csv_path.name,
+                raw_batch,
+                row_start=row_num - len(raw_batch) + 1,
+            )
 
         self._total_records += total
         logger.info("kaggle_file_done",
                     extra={"key": key, "file": csv_path.name,
                            "records": total, "engine": "spark"})
+        logger.info("kaggle_raw_table_loaded",
+                    extra={"key": key, "file": csv_path.name, "rows": raw_total})
         return page   # outer page counter no longer used for kaggle (kept for API compat)
 
     # ── Pandas fallback path (single CSV file) ────────────────────────────────
 
     def _process_pandas_file(
         self, key: str, slug: str,
-        csv_path: Path, year: int | None, page: int,
+        csv_path: Path, year: int | None, page: int, cols: list[str],
     ) -> int:
         """Read one CSV in 50K pandas chunks — no full-file memory load."""
         total     = 0
-        col_map   = None
+        raw_total = 0
+        row_num = 0
+        col_map = _column_map(key, cols)
         batch_num = 1
 
         for chunk in pd.read_csv(csv_path, chunksize=BRONZE_BATCH_SIZE, low_memory=False):
-            if col_map is None:
-                col_map = _column_map(key, list(chunk.columns))
+            raw_rows = chunk.to_dict(orient="records")
+            raw_total += self._raw_store.insert_rows(
+                key,
+                csv_path.name,
+                raw_rows,
+                row_start=row_num + 1,
+            )
+            row_num += len(raw_rows)
 
             records = []
-            for row in chunk.to_dict(orient="records"):
+            for row in raw_rows:
                 rec = _build_envelope(key, row, slug, year, col_map)
                 if rec and rec.get("title", "").strip():
                     records.append(rec)
@@ -238,6 +300,8 @@ class KaggleDatasetLoader(BaseIngester):
         logger.info("kaggle_file_done",
                     extra={"key": key, "file": csv_path.name,
                            "records": total, "engine": "pandas"})
+        logger.info("kaggle_raw_table_loaded",
+                    extra={"key": key, "file": csv_path.name, "rows": raw_total})
         return page
 
     # ── XLSX path (pandas only — Spark can't read XLSX) ───────────────────────
@@ -262,6 +326,7 @@ class KaggleDatasetLoader(BaseIngester):
 
         col_map = _column_map(key, list(df_full.columns))
         if not col_map.get("title"):
+            self._process_raw_only_xlsx(key, xlsx_path, df_full)
             logger.info("kaggle_skip_file",
                         extra={"file": xlsx_path.name, "reason": "no title column"})
             return page
@@ -270,10 +335,18 @@ class KaggleDatasetLoader(BaseIngester):
                     extra={"key": key, "file": xlsx_path.name, "rows": len(df_full)})
 
         batch_num = 1
+        raw_total = 0
         for start in range(0, len(df_full), BRONZE_BATCH_SIZE):
             chunk   = df_full.iloc[start : start + BRONZE_BATCH_SIZE]
+            raw_rows = chunk.to_dict(orient="records")
+            raw_total += self._raw_store.insert_rows(
+                key,
+                xlsx_path.name,
+                raw_rows,
+                row_start=start + 1,
+            )
             records = []
-            for row in chunk.to_dict(orient="records"):
+            for row in raw_rows:
                 rec = _build_envelope(key, row, slug, year, col_map)
                 if rec and rec.get("title", "").strip():
                     records.append(rec)
@@ -287,7 +360,38 @@ class KaggleDatasetLoader(BaseIngester):
         logger.info("kaggle_file_done",
                     extra={"key": key, "file": xlsx_path.name,
                            "records": total, "engine": "pandas_xlsx"})
+        logger.info("kaggle_raw_table_loaded",
+                    extra={"key": key, "file": xlsx_path.name, "rows": raw_total})
         return page
+
+    def _process_raw_only_csv(self, key: str, csv_path: Path) -> None:
+        total = 0
+        row_num = 0
+        for chunk in pd.read_csv(csv_path, chunksize=BRONZE_BATCH_SIZE, low_memory=False):
+            raw_rows = chunk.to_dict(orient="records")
+            total += self._raw_store.insert_rows(
+                key,
+                csv_path.name,
+                raw_rows,
+                row_start=row_num + 1,
+            )
+            row_num += len(raw_rows)
+        logger.info("kaggle_raw_table_loaded",
+                    extra={"key": key, "file": csv_path.name, "rows": total, "mode": "raw_only"})
+
+    def _process_raw_only_xlsx(self, key: str, xlsx_path: Path, df_full: pd.DataFrame) -> None:
+        total = 0
+        for start in range(0, len(df_full), BRONZE_BATCH_SIZE):
+            chunk = df_full.iloc[start : start + BRONZE_BATCH_SIZE]
+            raw_rows = chunk.to_dict(orient="records")
+            total += self._raw_store.insert_rows(
+                key,
+                xlsx_path.name,
+                raw_rows,
+                row_start=start + 1,
+            )
+        logger.info("kaggle_raw_table_loaded",
+                    extra={"key": key, "file": xlsx_path.name, "rows": total, "mode": "raw_only"})
 
     # ── Helpers ───────────────────────────────────────────────────────────────
 
@@ -304,7 +408,11 @@ class KaggleDatasetLoader(BaseIngester):
         raw_dir   = Path(settings.bronze_storage_path) / "kaggle" / safe_name
         raw_dir.mkdir(parents=True, exist_ok=True)
 
-        existing = list(raw_dir.glob("*.csv")) + list(raw_dir.glob("*.json"))
+        existing = (
+            list(raw_dir.glob("*.csv"))
+            + list(raw_dir.glob("*.json"))
+            + list(raw_dir.glob("*.xlsx"))
+        )
         if existing:
             logger.info("kaggle_already_downloaded",
                         extra={"slug": slug, "files": len(existing)})
@@ -357,16 +465,13 @@ def _column_map(key: str, cols: list[str]) -> dict[str, str | None]:
         "job_type":   pick("job_type", "employment_type", "work_type", "schedule_type"),
     }
 
-    # Dataset-specific extras
-    if key == "ds_salaries":
-        common["work_year"]        = pick("work_year")
-        common["experience_level"] = pick("experience_level")
-        common["employment_type"]  = pick("employment_type")
-        common["company_size"]     = pick("company_size")
-        common["remote_ratio"]     = pick("remote_ratio")
-
-    if key in ("linkedin_2024", "ds_postings_2024", "us_tech_2024"):
-        common["job_link"] = pick("job_link", "job_url", "job_url_direct")
+    # Generic extras used across many Kaggle datasets
+    common["work_year"]        = pick("work_year")
+    common["experience_level"] = pick("experience_level")
+    common["employment_type"]  = pick("employment_type")
+    common["company_size"]     = pick("company_size")
+    common["remote_ratio"]     = pick("remote_ratio")
+    common["job_link"]         = pick("job_link", "job_url", "job_url_direct")
 
     return common
 
@@ -408,9 +513,9 @@ def _build_envelope(
     sal_max    = gf("sal_max") or sal_single
 
     # Remote flag
-    if key == "ds_salaries":
-        rr = _safe_float(g("remote_ratio"))
-        is_remote = (rr >= 50) if rr is not None else None
+    rr = _safe_float(g("remote_ratio")) if col_map.get("remote_ratio") else None
+    if rr is not None:
+        is_remote = rr >= 50
     else:
         is_remote = _parse_bool(g("remote")) if col_map.get("remote") else _remote_from_type(job_type)
 
@@ -423,17 +528,16 @@ def _build_envelope(
     else:
         skills = _parse_skills_list(skills_raw)
 
-    # Dataset-year override for ds_salaries (work_year column is authoritative)
+    # Dataset-year override when work_year is available (more precise than static dataset year)
     ds_year = year
-    if key == "ds_salaries":
+    if col_map.get("work_year"):
         wy = _safe_float(g("work_year"))
         ds_year = int(wy) if wy else year
 
     # Extra metadata
-    experience_level = g("experience_level") if key == "ds_salaries" else None
-    employment_type  = (g("employment_type") if key == "ds_salaries"
-                        else (job_type or None))
-    company_size     = g("company_size")     if key == "ds_salaries" else None
+    experience_level = g("experience_level") if col_map.get("experience_level") else None
+    employment_type  = g("employment_type") if col_map.get("employment_type") else (job_type or None)
+    company_size     = g("company_size") if col_map.get("company_size") else None
 
     # Work-type string
     if is_remote is True:

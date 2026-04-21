@@ -215,6 +215,51 @@ class KaggleJobDetail(Base):
     job = relationship("Job", backref="kaggle_detail", uselist=False)
 
 
+# ─── Unified Wide Staging ─────────────────────────────────────────────────────
+
+class UnifiedJobWide(Base):
+    """
+    High-retention unified staging table built from raw sources (Kaggle/Adzuna/Remotive).
+    Keeps broad coverage for profiling, dedup and later curated modeling.
+    """
+    __tablename__ = "unified_jobs_wide"
+
+    id                   = Column(Integer, primary_key=True, autoincrement=True)
+    normalization_run_id = Column(String(36), nullable=False, index=True)
+    source               = Column(String(20), nullable=False, index=True)   # kaggle | adzuna | remotive
+    dataset_key          = Column(String(100), nullable=True)
+    source_file          = Column(String(255), nullable=True)
+    source_record_id     = Column(Text, nullable=True)
+    raw_table            = Column(String(255), nullable=True)
+    raw_row_number       = Column(Integer, nullable=True)
+    run_id               = Column(String(36), nullable=True)
+
+    title                = Column(Text, nullable=True)
+    title_norm           = Column(String(255), nullable=True)
+    company_name         = Column(Text, nullable=True)
+    location_raw         = Column(Text, nullable=True)
+    country              = Column(String(100), nullable=True)
+    city                 = Column(String(100), nullable=True)
+    remote_flag          = Column(Boolean, nullable=True)
+    posted_at_raw        = Column(Text, nullable=True)
+    posted_at            = Column(DateTime, nullable=True)
+
+    salary_min           = Column(Float, nullable=True)
+    salary_max           = Column(Float, nullable=True)
+    salary_currency      = Column(String(10), nullable=True)
+    employment_type      = Column(String(80), nullable=True)
+
+    description          = Column(Text, nullable=True)
+    skills_text          = Column(Text, nullable=True)
+    role_family          = Column(String(120), nullable=True)
+
+    quality_score        = Column(Integer, nullable=False, default=0)
+    quality_flags        = Column(Text, nullable=True)
+    dedup_key            = Column(Text, nullable=True)
+    is_exact_duplicate   = Column(Boolean, nullable=False, default=False)
+    created_at           = Column(DateTime, server_default=func.now())
+
+
 # ─── Gold Layer ───────────────────────────────────────────────────────────────
 
 class DailyRoleDemand(Base):

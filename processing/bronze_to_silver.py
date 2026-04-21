@@ -158,9 +158,19 @@ def _run_spark(source: str | None, run_date: str, run_id: str | None) -> dict:
     dupes_in_batch = total_before_dedup - df.count()
     logger.info("spark_dedup_in_batch", extra={"removed": dupes_in_batch})
 
+    rows_after_dedup = total_before_dedup - dupes_in_batch
     # ── 6. Collect, then cross-run dedup in Python ────────────────────────────
     # Avoids a second createDataFrame call (which needs Python workers on Windows).
+    # collect() can take many minutes on ~1M+ rows and looks "stuck" with no logs.
+    logger.info(
+        "spark_collecting_driver",
+        extra={
+            "rows": rows_after_dedup,
+            "hint": "Serializing Spark rows to Python; then PostgreSQL row-by-row writes follow.",
+        },
+    )
     records = [row.asDict() for row in df.collect()]
+    logger.info("spark_collect_done", extra={"rows": len(records)})
 
     existing_hashes = set(_fetch_existing_hashes())
     before_xrun     = len(records)
@@ -169,7 +179,8 @@ def _run_spark(source: str | None, run_date: str, run_id: str | None) -> dict:
     already_in_db = before_xrun - len(records)
 
     # ── 7. Write to PostgreSQL ────────────────────────────────────────────────
-    inserted, skipped, errors = _write_records(records, run_id)
+    # Rows are already filtered against DB hashes — skip per-row SELECT in _upsert_job.
+    inserted, skipped, errors = _write_records(records, run_id, trust_prefilter=True)
 
     summary = {
         "engine":             "spark",
@@ -387,7 +398,7 @@ def _run_pandas(source: str | None, run_date: str, run_id: str | None) -> dict:
     df = df[~df["raw_hash"].isin(existing)]
 
     records   = df.to_dict(orient="records")
-    inserted, skipped, errors = _write_records(records, run_id)
+    inserted, skipped, errors = _write_records(records, run_id, trust_prefilter=True)
 
     summary = {
         "engine":             "pandas",
@@ -412,6 +423,8 @@ def _run_pandas(source: str | None, run_date: str, run_id: str | None) -> dict:
 def _write_records(
     records: list[dict],
     run_id: str | None,
+    *,
+    trust_prefilter: bool = False,
 ) -> tuple[int, int, int]:
     """
     Write a list of cleaned, deduplicated records to Silver tables.
@@ -419,56 +432,83 @@ def _write_records(
     Uses a SAVEPOINT per record so that one bad row doesn't abort the entire
     batch — the previous SAWarning was caused by calling db.rollback() on the
     outer transaction, which wiped all pending state including the error log.
+
+    When ``trust_prefilter`` is True, callers assert ``raw_hash`` was already
+    checked against the DB (cross-run dedup). Skips an extra SELECT per row,
+    which matters for large Kaggle loads.
     """
     inserted = skipped = errors = 0
+    total = len(records)
+    log_every = 10_000
+    chunk_size = 2_000
     db = SessionLocal()
 
-    # Open an explicit outer transaction so we can use nested savepoints
-    db.begin()
     try:
-        for raw in records:
-            savepoint = db.begin_nested()   # SAVEPOINT
-            try:
-                result = _upsert_job(db, raw, run_id)
-                savepoint.commit()          # RELEASE SAVEPOINT
-                if result == "inserted":
-                    inserted += 1
-                else:
-                    skipped += 1
-            except Exception as exc:
-                savepoint.rollback()        # ROLLBACK TO SAVEPOINT — outer tx intact
-                errors += 1
-                # Log the error in its own savepoint so it persists
-                try:
-                    err_sp = db.begin_nested()
-                    db.add(PipelineError(
-                        run_id        = run_id,
-                        stage         = "bronze_to_silver",
-                        error_type    = type(exc).__name__,
-                        error_message = str(exc)[:500],
-                        record_id     = str(raw.get("external_id", ""))[:250],
-                    ))
-                    err_sp.commit()
-                except Exception:
-                    try:
-                        err_sp.rollback()
-                    except Exception:
-                        pass
+        for chunk_start in range(0, total, chunk_size):
+            chunk_end = min(chunk_start + chunk_size, total)
+            chunk = records[chunk_start:chunk_end]
 
-        db.commit()   # commit all successful inserts + error logs
-    except Exception:
-        db.rollback()
-        raise
+            # Open a transaction per chunk to avoid one massive long-running tx.
+            db.begin()
+            try:
+                for i, raw in enumerate(chunk, start=chunk_start + 1):
+                    if log_every and i % log_every == 0:
+                        logger.info(
+                            "silver_write_progress",
+                            extra={"processed": i, "total": total, "inserted": inserted, "errors": errors},
+                        )
+                    savepoint = db.begin_nested()   # SAVEPOINT
+                    try:
+                        result = _upsert_job(db, raw, run_id, skip_hash_lookup=trust_prefilter)
+                        savepoint.commit()          # RELEASE SAVEPOINT
+                        if result == "inserted":
+                            inserted += 1
+                        else:
+                            skipped += 1
+                    except Exception as exc:
+                        savepoint.rollback()        # ROLLBACK TO SAVEPOINT — chunk tx intact
+                        errors += 1
+                        # Log the error in its own savepoint so it persists
+                        try:
+                            err_sp = db.begin_nested()
+                            db.add(PipelineError(
+                                run_id        = run_id,
+                                stage         = "bronze_to_silver",
+                                error_type    = type(exc).__name__,
+                                error_message = str(exc)[:500],
+                                record_id     = str(raw.get("external_id", ""))[:250],
+                            ))
+                            err_sp.commit()
+                        except Exception:
+                            try:
+                                err_sp.rollback()
+                            except Exception:
+                                pass
+
+                db.commit()
+                logger.info(
+                    "silver_write_chunk_committed",
+                    extra={"chunk_start": chunk_start + 1, "chunk_end": chunk_end, "total": total},
+                )
+            except Exception:
+                db.rollback()
+                raise
     finally:
         db.close()
 
     return inserted, skipped, errors
 
 
-def _upsert_job(db, raw: dict, run_id: str | None) -> str:
+def _upsert_job(
+    db,
+    raw: dict,
+    run_id: str | None,
+    *,
+    skip_hash_lookup: bool = False,
+) -> str:
     raw_hash = str(raw.get("raw_hash") or _make_hash_from_raw(raw))
 
-    if db.query(Job).filter(Job.raw_hash == raw_hash).first():
+    if not skip_hash_lookup and db.query(Job).filter(Job.raw_hash == raw_hash).first():
         return "skipped"
 
     title        = (raw.get("title")   or "").strip()

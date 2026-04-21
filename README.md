@@ -1,8 +1,8 @@
 # Job Market Intelligence System
 
 A complete data engineering pipeline that ingests job listings from multiple sources,
-processes them through a Medallion architecture (Bronze -> Silver -> Gold), and serves
-labor-market insights via a FastAPI backend and React JS dashboard.
+stores raw data safely, normalizes it for analytics, and serves labor-market insights
+via a FastAPI backend and React dashboard.
 
 ## Team — Group 7
 - Abdullah Khurram Vohra
@@ -10,17 +10,27 @@ labor-market insights via a FastAPI backend and React JS dashboard.
 - Burhan Ahmed
 - Muhammad Ali Siddique
 
-## Architecture
+## Architecture (Current)
 
 ```
 Adzuna API  --+
-Remotive API--+--> Bronze (raw JSON) --> Silver (PostgreSQL) --> Gold (aggregates)
-Kaggle -------+                                                        |
-                                                                       v
-                                                          FastAPI --> React Dashboard
+Remotive API--+--> Bronze (raw files + JSON envelopes) --------------------------+
+Kaggle -------+                                                                   |
+                                                                               raw_pipeline.py
+                                                                                     |
+                                                                                     v
+                                                                          unified_jobs_wide (Postgres)
+                                                                                     |
+                                                                          (next step: curated/gold)
+                                                                                     |
+                                                                                     v
+                                                                            FastAPI --> React
 ```
 
-Orchestrated by **Prefect** (self-hosted). PySpark used for Bronze -> Silver -> Gold transforms.
+Notes:
+- Kaggle seed currently runs in **ingestion-only** mode (raw storage + raw tables).
+- Kaggle data is intentionally **not** inserted into `jobs` / `kaggle_job_details` right now.
+- A dedicated normalization command (`raw_pipeline.py`) builds `unified_jobs_wide`.
 
 ---
 
@@ -78,19 +88,42 @@ prefect server start
 python pipeline.py
 ```
 
-This runs the full pipeline **immediately** (Adzuna + Remotive -> Bronze -> Silver -> Gold),
-then registers an **8-hour cron schedule** so it reruns automatically.
+This runs the full live pipeline (Adzuna + Remotive) and schedules recurring execution.
+Use this for API-source operations.
 
 Other options:
 
 ```powershell
 python pipeline.py --once       # run once and exit (good for testing)
 python pipeline.py --schedule   # register schedule only, skip immediate run
-python pipeline.py --seed       # one-time Kaggle historical seed (first run, DB empty)
+python pipeline.py --seed       # Kaggle ingestion-only seed (raw files + kaggle_raw_* tables)
 ```
 
-> For the very first run with an empty database, run `--seed` first to load Kaggle datasets,
-> then run `pipeline.py` for the live API data.
+Important behavior of `--seed`:
+- Downloads/reuses selected Kaggle datasets.
+- Writes normalized Kaggle bronze JSON batches under `data/bronze/kaggle/<date>/<dataset_key>/`.
+- Writes relational raw copies to `kaggle_raw_*` tables (one table per source file).
+- Does **not** populate `jobs` or `kaggle_job_details`.
+
+### Terminal 3b — Raw normalization (new)
+
+Run this after a seed (or any raw ingestion) to build a unified staging table:
+
+```powershell
+.\env\Scripts\activate
+python raw_pipeline.py --truncate
+```
+
+Commands:
+
+```powershell
+python raw_pipeline.py --truncate        # clear and rebuild unified_jobs_wide
+python raw_pipeline.py                   # append another normalization run
+python raw_pipeline.py --run-date 2026-04-21   # scope adzuna/remotive bronze by date
+```
+
+What it builds:
+- `unified_jobs_wide` (high-retention canonical staging table across Kaggle + Adzuna + Remotive raw data)
 
 ---
 
@@ -112,7 +145,8 @@ npm run dev
 |---|---|---|
 | FastAPI backend | `uvicorn serving.api.main:app --reload` | http://localhost:8000/docs |
 | Prefect UI | `prefect server start` | http://localhost:4200 |
-| Pipeline runner | `python pipeline.py` | — |
+| Ingestion runner | `python pipeline.py` / `python pipeline.py --seed` | — |
+| Raw normalizer | `python raw_pipeline.py --truncate` | — |
 | React dashboard | `npm run dev` (in serving/frontend) | http://localhost:3000 |
 
 ---
@@ -129,7 +163,7 @@ docker-compose up --build
 
 ```
 ├── ingestion/          API clients and dataset loaders (Bronze layer)
-├── processing/         Bronze->Silver->Gold transformations + validation
+├── processing/         Raw->wide + Bronze->Silver->Gold transformations + validation
 ├── storage/            SQLAlchemy models and DB connection
 ├── orchestration/      Prefect flows and task definitions
 ├── serving/
@@ -139,6 +173,7 @@ docker-compose up --build
 ├── monitoring/         Structured JSON logging
 ├── config/             Pydantic settings (env var management)
 ├── pipeline.py         Pipeline runner and scheduler
+├── raw_pipeline.py     Raw normalization runner -> unified_jobs_wide
 └── data/               Local storage (bronze/, ge_reports/) — git-ignored
 ```
 
@@ -173,6 +208,37 @@ Or directly (bypasses Prefect UI, good for quick testing):
 ```powershell
 python pipeline.py --once
 ```
+
+To run Kaggle ingestion only:
+
+```powershell
+python pipeline.py --seed
+```
+
+To normalize raw data into `unified_jobs_wide`:
+
+```powershell
+python raw_pipeline.py --truncate
+```
+
+---
+
+## Recommended Daily Workflow
+
+For local development with current ingestion-first setup:
+
+1. Start backend: `uvicorn serving.api.main:app --reload --host 0.0.0.0 --port 8000`
+2. Start Prefect: `prefect server start`
+3. Run ingestion:
+   - Kaggle/raw seed: `python pipeline.py --seed`
+   - API sources: `python pipeline.py --once` (or `python pipeline.py` for schedule)
+4. Build unified staging: `python raw_pipeline.py --truncate`
+5. Start frontend: `npm run dev` in `serving/frontend`
+
+This sequence ensures:
+- raw files are preserved,
+- raw DB tables are populated,
+- `unified_jobs_wide` is refreshed for analysis/dashboard preparation.
 
 ---
 

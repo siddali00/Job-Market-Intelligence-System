@@ -72,7 +72,7 @@ def ingest_remotive(run_id: str) -> dict:
 )
 def ingest_kaggle(run_id: str) -> dict:
     from ingestion.dataset_loader import KaggleDatasetLoader
-    loader = KaggleDatasetLoader()
+    loader = KaggleDatasetLoader(run_id=run_id)
     result = loader.run()
     result["run_id"] = run_id
     return result
@@ -252,9 +252,21 @@ def seed_historical_data() -> dict:
 
     try:
         kaggle_result = ingest_kaggle(run_id=run_id)
-        b2s_result    = bronze_to_silver(run_id=run_id, run_date=run_date)
-        _close_run(run_id, b2s_result)
-        return {"run_id": run_id, "kaggle": kaggle_result, "bronze_to_silver": b2s_result}
+        # In ingestion-focused mode, do NOT populate jobs / kaggle_job_details yet.
+        ingest_only_summary = {
+            "engine": "ingest_only",
+            "stage": "seed_historical_data",
+            "run_date": run_date,
+            "total_raw": kaggle_result.get("total_records", 0),
+            "duplicates_removed": 0,
+            "already_in_db": 0,
+            "total_inserted": 0,
+            "total_skipped": 0,
+            "total_errors": 0,
+            "by_source": {"kaggle": kaggle_result.get("total_records", 0)},
+        }
+        _close_run(run_id, ingest_only_summary)
+        return {"run_id": run_id, "kaggle": kaggle_result, "mode": "ingest_only"}
     except Exception as exc:
         _close_run(run_id, {}, status="failed")
         raise
