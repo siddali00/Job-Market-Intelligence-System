@@ -97,6 +97,34 @@
 
 ---
 
+## Phase 3.5: Predictive Modeling
+
+### Abdullah Khurram Vohra - Feature Engineering
+- [ ] Identify features from Gold layer tables (salary history, skill demand, job market trends) (May 1)
+- [ ] Create feature engineering pipeline (data transformations, scaling, encoding) (May 1)
+- [ ] Handle missing values and outliers in features (May 2)
+- [ ] Implement feature selection (correlation analysis, importance ranking) (May 2)
+- [ ] Create training dataset with engineered features (May 2)
+- [ ] Document feature engineering logic and assumptions (May 2)
+
+### Burhan Ahmed - Model Selection & Training
+- [ ] Research and select appropriate ML models (regression for salary prediction) (May 2)
+- [ ] Set up model training pipeline (train/validation/test split) (May 2)
+- [ ] Train baseline models and evaluate performance (May 2)
+- [ ] Implement hyperparameter tuning (grid search or Bayesian optimization) (May 3)
+- [ ] Evaluate final model with metrics (RMSE, MAE, R², feature importance) (May 3)
+- [ ] Save trained model and document performance metrics (May 3)
+
+### Muhammad Ali Siddiqui - Model Serving & Integration
+- [ ] Create model loading and prediction endpoints (May 3)
+- [ ] Integrate trained model into FastAPI backend (May 3)
+- [ ] Create `/predictions/salary` endpoint (predict salary based on job features) (May 3)
+- [ ] Implement model versioning and artifact management (May 3)
+- [ ] Add model performance monitoring and logging (May 3)
+- [ ] Document model serving architecture and API endpoints (May 3)
+
+---
+
 ## Phase 4: Orchestration & Scheduling
 
 ### Abdullah Khurram Vohra - Prefect Core Setup & Primary Flows
@@ -148,6 +176,7 @@
 - [ ] Create `/jobs/search` endpoint (job search with filters) (May 2)
 - [ ] Create `/roles/popular` endpoint (trending job roles) (May 3)
 - [ ] Create `/locations/analysis` endpoint (location-based insights) (May 3)
+- [ ] Create `/predictions/salary` endpoint (ML salary predictions) (May 3)
 - [ ] Add pagination and filtering to all endpoints (May 3)
 - [ ] Add request validation and error handling (May 3)
 - [ ] Create API documentation (OpenAPI/Swagger) (May 3)
@@ -251,12 +280,12 @@
 
 ## Task Distribution Summary
 
-| Member | Primary Role | Data Source | Additional Tasks |
+| Member | Primary Role | Data Source | Key Additional Tasks |
 |--------|------|-------|------|
-| **Abdullah Khurram Vohra** | Pipeline Lead | Adzuna API | Prefect orchestration core, scheduling, monitoring |
+| **Abdullah Khurram Vohra** | Pipeline Lead | Adzuna API | Prefect orchestration core, Feature engineering for ML |
 | **Syed Muhammad Abu Talib** | Pipeline Lead | Remotive API | PostgreSQL database setup, Docker deployment |
-| **Burhan Ahmed** | Pipeline Lead | Kaggle/HuggingFace | Gold layer design, logging & monitoring, deployment support |
-| **Muhammad Ali Siddiqui** | Pipeline Lead | USA Jobs API | FastAPI backend, React frontend, API endpoints |
+| **Burhan Ahmed** | Pipeline Lead | Kaggle/HuggingFace | Gold layer design, Model selection & training, Logging & monitoring |
+| **Muhammad Ali Siddiqui** | Pipeline Lead | USA Jobs API | FastAPI backend, Model serving & integration, React frontend, API endpoints |
 
 ---
 
@@ -264,7 +293,8 @@
 - **April 25, 2026**: Project start date (today) - Begin Phase 1 (Ingestion & Database)
 - **April 25-27**: Phase 1 - Bronze layer ingestion (all data sources)
 - **April 28-30**: Phase 2 - Silver layer transformations
-- **May 1-3**: Phase 3-7 - Gold layer, Orchestration, Backend API, Frontend
+- **May 1-2**: Phase 3 & 3.5 - Gold layer design & ML Feature Engineering
+- **May 2-3**: Phase 4-7 - Model selection/training, Orchestration, Backend API, Frontend, Model serving
 - **May 3, 2026 (11:59 PM)**: Final Submission deadline
 - **May 4-5, 2026**: Final Presentation & Live Demo
 
@@ -279,3 +309,7 @@
 - Use modular code structure (separate concerns)
 - Add comprehensive comments and documentation
 - Follow PEP8 coding standards
+- **ML Component**: Implement salary prediction model using job features from Gold layer
+  - Model should predict salary ranges based on job title, location, skills, and experience
+  - Include feature importance analysis and model evaluation metrics
+  - Serve predictions via API endpoint for dashboard integration
