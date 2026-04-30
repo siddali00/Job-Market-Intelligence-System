@@ -68,9 +68,9 @@ export default function SkillTrends() {
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-6">
         <MetricCard label="Skills tracked" value={trending.length} />
         <MetricCard
-          label="Top skill"
+          label="Trending now"
           value={trending[0]?.skill ?? "—"}
-          subtitle={`${trending[0]?.total_jobs ?? 0} jobs`}
+          subtitle={`${trending[0]?.peak_7d_avg?.toFixed(1) ?? 0} jobs/day (7d peak)`}
           highlight
         />
         <MetricCard label="7d avg (top)" value={trending[0]?.peak_7d_avg?.toFixed(1) ?? "—"} subtitle="postings/day" />

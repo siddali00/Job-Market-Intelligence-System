@@ -712,7 +712,7 @@ def _to_int(value: Any) -> int | None:
 def _parse_datetime(value: str) -> datetime | None:
     if not value:
         return None
-    for fmt in ("%Y-%m-%dT%H:%M:%SZ", "%Y-%m-%d %H:%M:%S", "%Y-%m-%d", "%d/%m/%Y"):
+    for fmt in ("%Y-%m-%dT%H:%M:%S", "%Y-%m-%dT%H:%M:%SZ", "%Y-%m-%d %H:%M:%S", "%Y-%m-%d", "%d/%m/%Y"):
         try:
             return datetime.strptime(str(value)[:19], fmt)
         except ValueError:

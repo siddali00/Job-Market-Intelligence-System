@@ -1,6 +1,9 @@
 # Stage 1: Build the React app
 FROM node:20-alpine AS builder
 
+# Upgrade Alpine packages to patch any known CVEs in the base image
+RUN apk upgrade --no-cache
+
 WORKDIR /app
 COPY package.json package-lock.json* ./
 RUN npm install --frozen-lockfile
@@ -12,7 +15,10 @@ ENV VITE_API_URL=$VITE_API_URL
 RUN npm run build
 
 # Stage 2: Serve with Nginx
-FROM nginx:alpine
+FROM nginx:stable-alpine
+
+# Upgrade Alpine packages to patch any known CVEs in the base image
+RUN apk upgrade --no-cache
 
 COPY --from=builder /app/dist /usr/share/nginx/html
 

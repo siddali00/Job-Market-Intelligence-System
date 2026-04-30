@@ -16,7 +16,7 @@
 - [x] Create data models for raw Adzuna data (Apr 26)
 - [x] Implement error handling and retry logic (Apr 27)
 - [x] Store raw data to Bronze layer (JSON files) (Apr 27)
-- [ ] Test API ingestion with sample data (Apr 27)
+- [x] Test API ingestion with sample data (Apr 27)
 
 ### Syed Muhammad Abu Talib - Remotive API Ingestion
 - [x] Set up Remotive API client with authentication (Apr 25-26)

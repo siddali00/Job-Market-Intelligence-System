@@ -32,6 +32,7 @@ from datetime import date
 from typing import Any
 
 from monitoring.logger import get_logger
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 from storage.db import SessionLocal
 from storage.models import (
     DailyRoleDemand, DailySkillDemand, MarketAlert,
@@ -297,108 +298,190 @@ def _get_spark():
 # ── DB upsert helpers ─────────────────────────────────────────────────────────
 
 def _upsert_role_demand(rows) -> int:
+    if not rows:
+        return 0
+    records = [
+        {
+            "date": r["date"],
+            "role": r["role"],
+            "job_count": int(r["job_count"]),
+            "moving_avg_7d": float(r["moving_avg_7d"] or 0),
+            "moving_avg_30d": float(r["moving_avg_30d"] or 0),
+        }
+        for r in rows
+    ]
     db = SessionLocal()
     try:
-        for r in rows:
-            db.merge(DailyRoleDemand(
-                date=r["date"],
-                role=r["role"],
-                job_count=int(r["job_count"]),
-                moving_avg_7d=float(r["moving_avg_7d"] or 0),
-                moving_avg_30d=float(r["moving_avg_30d"] or 0),
-            ))
+        stmt = pg_insert(DailyRoleDemand).values(records)
+        stmt = stmt.on_conflict_do_update(
+            constraint="uq_daily_role_demand",
+            set_={
+                "job_count":      stmt.excluded.job_count,
+                "moving_avg_7d":  stmt.excluded.moving_avg_7d,
+                "moving_avg_30d": stmt.excluded.moving_avg_30d,
+            },
+        )
+        db.execute(stmt)
         db.commit()
-        return len(rows)
+        return len(records)
     finally:
         db.close()
 
 
 def _upsert_skill_demand(rows) -> int:
+    if not rows:
+        return 0
+    records = [
+        {
+            "date": r["date"],
+            "skill": r["skill"],
+            "job_count": int(r["job_count"]),
+            "moving_avg_7d": float(r["moving_avg_7d"] or 0),
+            "moving_avg_30d": float(r["moving_avg_30d"] or 0),
+        }
+        for r in rows
+    ]
     db = SessionLocal()
     try:
-        for r in rows:
-            db.merge(DailySkillDemand(
-                date=r["date"],
-                skill=r["skill"],
-                job_count=int(r["job_count"]),
-                moving_avg_7d=float(r["moving_avg_7d"] or 0),
-                moving_avg_30d=float(r["moving_avg_30d"] or 0),
-            ))
+        stmt = pg_insert(DailySkillDemand).values(records)
+        stmt = stmt.on_conflict_do_update(
+            constraint="uq_daily_skill_demand",
+            set_={
+                "job_count":      stmt.excluded.job_count,
+                "moving_avg_7d":  stmt.excluded.moving_avg_7d,
+                "moving_avg_30d": stmt.excluded.moving_avg_30d,
+            },
+        )
+        db.execute(stmt)
         db.commit()
-        return len(rows)
+        return len(records)
     finally:
         db.close()
 
 
 def _upsert_salary_summary(rows) -> int:
+    records = [
+        {
+            "role": r["role"],
+            "country": r["country"],
+            "sample_size": int(r["sample_size"]),
+            "salary_median": float(r["salary_median"]),
+            "salary_p25": float(r["salary_p25"]),
+            "salary_p75": float(r["salary_p75"]),
+            "salary_p90": float(r["salary_p90"]),
+        }
+        for r in rows
+        if int(r["sample_size"]) >= 3
+    ]
+    if not records:
+        return 0
     db = SessionLocal()
     try:
-        for r in rows:
-            if int(r["sample_size"]) < 3:
-                continue  # skip groups with too few samples
-            db.merge(SalarySummary(
-                role=r["role"],
-                country=r["country"],
-                sample_size=int(r["sample_size"]),
-                salary_median=float(r["salary_median"]),
-                salary_p25=float(r["salary_p25"]),
-                salary_p75=float(r["salary_p75"]),
-                salary_p90=float(r["salary_p90"]),
-            ))
+        stmt = pg_insert(SalarySummary).values(records)
+        stmt = stmt.on_conflict_do_update(
+            constraint="uq_salary_summary",
+            set_={
+                "sample_size":   stmt.excluded.sample_size,
+                "salary_median": stmt.excluded.salary_median,
+                "salary_p25":    stmt.excluded.salary_p25,
+                "salary_p75":    stmt.excluded.salary_p75,
+                "salary_p90":    stmt.excluded.salary_p90,
+            },
+        )
+        db.execute(stmt)
         db.commit()
-        return len(rows)
+        return len(records)
     finally:
         db.close()
 
 
 def _upsert_remote(rows) -> int:
+    if not rows:
+        return 0
+    records = [
+        {
+            "date": r["date"],
+            "role": r["role"],
+            "remote_count": int(r["remote_count"]),
+            "onsite_count": int(r["onsite_count"]),
+            "unknown_count": int(r["unknown_count"]),
+            "remote_ratio": float(r["remote_ratio"]) if r["remote_ratio"] is not None else None,
+        }
+        for r in rows
+    ]
     db = SessionLocal()
     try:
-        for r in rows:
-            db.merge(RemoteVsOnsite(
-                date=r["date"],
-                role=r["role"],
-                remote_count=int(r["remote_count"]),
-                onsite_count=int(r["onsite_count"]),
-                unknown_count=int(r["unknown_count"]),
-                remote_ratio=float(r["remote_ratio"]) if r["remote_ratio"] is not None else None,
-            ))
+        stmt = pg_insert(RemoteVsOnsite).values(records)
+        stmt = stmt.on_conflict_do_update(
+            constraint="uq_remote_vs_onsite",
+            set_={
+                "remote_count":  stmt.excluded.remote_count,
+                "onsite_count":  stmt.excluded.onsite_count,
+                "unknown_count": stmt.excluded.unknown_count,
+                "remote_ratio":  stmt.excluded.remote_ratio,
+            },
+        )
+        db.execute(stmt)
         db.commit()
-        return len(rows)
+        return len(records)
     finally:
         db.close()
 
 
 def _upsert_cooccurrence(rows) -> int:
+    if not rows:
+        return 0
+    records = [
+        {
+            "skill_a": r["skill_a"],
+            "skill_b": r["skill_b"],
+            "co_count": int(r["co_count"]),
+        }
+        for r in rows
+    ]
     db = SessionLocal()
     try:
-        for r in rows:
-            db.merge(SkillCooccurrence(
-                skill_a=r["skill_a"],
-                skill_b=r["skill_b"],
-                co_count=int(r["co_count"]),
-            ))
+        stmt = pg_insert(SkillCooccurrence).values(records)
+        stmt = stmt.on_conflict_do_update(
+            constraint="uq_skill_cooccurrence",
+            set_={"co_count": stmt.excluded.co_count},
+        )
+        db.execute(stmt)
         db.commit()
-        return len(rows)
+        return len(records)
     finally:
         db.close()
 
 
 def _upsert_alerts(rows, run_date: str) -> int:
+    if not rows:
+        return 0
+    alert_date = date.fromisoformat(run_date)
+    records = [
+        {
+            "alert_date":    alert_date,
+            "entity_type":   r["entity_type"],
+            "entity_name":   r["entity_name"],
+            "demand_7d_avg": float(r["moving_avg_7d"]),
+            "demand_30d_avg": float(r["moving_avg_30d"]),
+            "spike_ratio":   float(r["spike_ratio"]),
+        }
+        for r in rows
+    ]
     db = SessionLocal()
     try:
-        alert_date = date.fromisoformat(run_date)
-        for r in rows:
-            db.merge(MarketAlert(
-                alert_date=alert_date,
-                entity_type=r["entity_type"],
-                entity_name=r["entity_name"],
-                demand_7d_avg=float(r["moving_avg_7d"]),
-                demand_30d_avg=float(r["moving_avg_30d"]),
-                spike_ratio=float(r["spike_ratio"]),
-            ))
+        stmt = pg_insert(MarketAlert).values(records)
+        stmt = stmt.on_conflict_do_update(
+            constraint="uq_market_alert",
+            set_={
+                "demand_7d_avg":  stmt.excluded.demand_7d_avg,
+                "demand_30d_avg": stmt.excluded.demand_30d_avg,
+                "spike_ratio":    stmt.excluded.spike_ratio,
+            },
+        )
+        db.execute(stmt)
         db.commit()
-        return len(rows)
+        return len(records)
     finally:
         db.close()
 
@@ -422,9 +505,9 @@ def _run_pandas(run_date: str) -> dict[str, Any]:
         # Daily role demand
         rows = db.execute(text("""
             SELECT DATE(posted_at) AS date,
-                   COALESCE(title_normalized,'Other') AS role,
+                   title_normalized AS role,
                    COUNT(*) AS job_count
-            FROM jobs WHERE posted_at IS NOT NULL AND DATE(posted_at) <= :d
+            FROM jobs WHERE posted_at IS NOT NULL AND title_normalized IS NOT NULL AND DATE(posted_at) <= :d
             GROUP BY 1,2
         """), {"d": run_date}).fetchall()
         df = pd.DataFrame(rows, columns=["date","role","job_count"]).sort_values(["role","date"])
@@ -445,10 +528,11 @@ def _run_pandas(run_date: str) -> dict[str, Any]:
 
         # Salary summary
         rows = db.execute(text("""
-            SELECT COALESCE(title_normalized,'Other') AS role,
+            SELECT title_normalized AS role,
                    COALESCE(country,'UNKNOWN') AS country,
                    (salary_min+salary_max)/2.0 AS mid_salary
             FROM jobs WHERE salary_min IS NOT NULL AND salary_max IS NOT NULL AND salary_min > 0
+              AND title_normalized IS NOT NULL
         """)).fetchall()
         df = pd.DataFrame(rows, columns=["role","country","mid_salary"])
         grouped = df.groupby(["role","country"])["mid_salary"].agg(
@@ -462,11 +546,11 @@ def _run_pandas(run_date: str) -> dict[str, Any]:
 
         # Remote vs onsite
         rows = db.execute(text("""
-            SELECT DATE(posted_at) AS date, COALESCE(title_normalized,'Other') AS role,
+            SELECT DATE(posted_at) AS date, title_normalized AS role,
                    SUM(CASE WHEN remote=TRUE THEN 1 ELSE 0 END) AS remote_count,
                    SUM(CASE WHEN remote=FALSE THEN 1 ELSE 0 END) AS onsite_count,
                    SUM(CASE WHEN remote IS NULL THEN 1 ELSE 0 END) AS unknown_count
-            FROM jobs WHERE posted_at IS NOT NULL AND DATE(posted_at)<=:d GROUP BY 1,2
+            FROM jobs WHERE posted_at IS NOT NULL AND title_normalized IS NOT NULL AND DATE(posted_at)<=:d GROUP BY 1,2
         """), {"d": run_date}).fetchall()
         df = pd.DataFrame(rows, columns=["date","role","remote_count","onsite_count","unknown_count"])
         df["total"] = df["remote_count"] + df["onsite_count"]
@@ -487,7 +571,7 @@ def _run_pandas(run_date: str) -> dict[str, Any]:
             rows = db.execute(text(f"""
                 SELECT '{entity_type}' AS entity_type, {col} AS entity_name,
                        moving_avg_7d, moving_avg_30d,
-                       ROUND(moving_avg_7d / moving_avg_30d, 2) AS spike_ratio
+                       ROUND((moving_avg_7d / moving_avg_30d)::numeric, 2) AS spike_ratio
                 FROM {table}
                 WHERE date=:d AND moving_avg_30d>0 AND moving_avg_7d >= moving_avg_30d*2
             """), {"d": run_date}).fetchall()

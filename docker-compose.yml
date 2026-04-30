@@ -1,5 +1,3 @@
-version: "3.9"
-
 services:
   postgres:
     image: postgres:16-alpine
@@ -41,8 +39,11 @@ services:
       - "8000:8000"
     env_file: .env
     environment:
+      # Override .env values so the API uses Docker service names, not localhost
       DATABASE_URL: postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-changeme}@postgres:5432/${POSTGRES_DB:-jobmarket}
       PREFECT_API_URL: http://prefect-server:4200/api
+      BRONZE_STORAGE_PATH: /app/data/bronze
+      GE_REPORTS_PATH: /app/data/ge_reports
     volumes:
       - ./data:/app/data
     depends_on:
@@ -50,6 +51,11 @@ services:
         condition: service_healthy
       prefect-server:
         condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 15s
+      timeout: 10s
+      retries: 5
 
   frontend:
     build:
@@ -61,7 +67,34 @@ services:
     ports:
       - "3000:80"
     depends_on:
-      - api
+      api:
+        condition: service_healthy
+
+  # One-shot pipeline runner — not started by `docker-compose up`.
+  # Usage:
+  #   docker-compose run --rm pipeline --once    # live Adzuna + Remotive data
+  #   docker-compose run --rm pipeline --seed    # historical Kaggle seed
+  pipeline:
+    build:
+      context: .
+      dockerfile: Dockerfile.api
+    env_file: .env
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-changeme}@postgres:5432/${POSTGRES_DB:-jobmarket}
+      PREFECT_API_URL: http://prefect-server:4200/api
+      BRONZE_STORAGE_PATH: /app/data/bronze
+      GE_REPORTS_PATH: /app/data/ge_reports
+    volumes:
+      - ./data:/app/data
+    depends_on:
+      postgres:
+        condition: service_healthy
+      prefect-server:
+        condition: service_healthy
+      api:
+        condition: service_healthy
+    profiles: ["pipeline"]
+    entrypoint: ["python", "pipeline.py"]
 
 volumes:
   postgres_data:
