@@ -46,15 +46,9 @@ Run::
 Then trigger **one-time-seed** once from the UI for historical Kaggle load, or
 wait for **scheduled** ``full_pipeline`` cron.
 
-**Job variables:** This script sets ``pip_packages`` from **all** lines in
-``requirements.txt`` (including **PySpark**). PySpark needs a **Java 11+ JDK**
-on the worker: if the JVM is missing, ``bronze_to_silver`` still catches errors
-and falls back to **pandas**. For **guaranteed** Spark, run flows on
-**your own compute** (e.g. EC2) with ``java-17-*`` installed and ``JAVA_HOME``
-set in the deployment ``env``. Prefect Managed may or may not provide Java —
-check flow logs for ``spark_loaded_bronze`` vs. ``spark_unavailable_pandas_fallback``.
-
-See: https://docs.prefect.io/latest/guides/managed-execution/
+**Job variables:** ``pip_packages`` comes from ``requirements.txt`` but **never**
+re-installs **prefect** / **griffe** (breaks Managed workers). PySpark needs Java
+on the worker. See: https://docs.prefect.io/latest/guides/managed-execution/
 """
 
 from __future__ import annotations
@@ -66,16 +60,32 @@ from pathlib import Path
 
 def _managed_pip_packages() -> list[str]:
     """
-    All non-comment lines from ``requirements.txt`` for Prefect Managed
-    ``pip_packages`` (includes PySpark — ensure Java 11+ on the worker for Spark).
+    Lines from ``requirements.txt`` for Managed ``pip_packages``.
+
+    **Omits** ``prefect`` and ``griffe``: the Managed image already bundles
+    Prefect; reinstalling pinned versions often makes the worker exit with code 1
+    before any task logs appear.
     """
+    skip_roots = {"prefect", "griffe"}
+
+    def _root_pkg(spec: str) -> str:
+        s = spec.split("#", 1)[0].strip()
+        s = s.split("[", 1)[0].strip()
+        for sep in ("===", "==", ">=", "<=", "~=", "!=", "<", ">"):
+            if sep in s:
+                s = s.split(sep, 1)[0].strip()
+                break
+        return s.lower()
+
     req = Path(__file__).resolve().parent.parent / "requirements.txt"
     if not req.is_file():
-        return ["pandas", "pyspark>=3.4.0,<4.0.0", "sqlalchemy", "psycopg2-binary", "python-dotenv", "kaggle"]
+        return ["pandas", "sqlalchemy", "psycopg2-binary", "python-dotenv", "kaggle"]
     out: list[str] = []
     for raw in req.read_text(encoding="utf-8").splitlines():
         line = raw.split("#", 1)[0].strip()
         if not line:
+            continue
+        if _root_pkg(line) in skip_roots:
             continue
         out.append(line)
     return out
@@ -129,7 +139,7 @@ def main() -> None:
     )
 
     print(f"Deployed to pool {pool!r} from {repo!r} branch {branch!r}")
-    print(f"job_variables pip_packages: {len(jv['pip_packages'])} requirements (PySpark included — needs JVM)")
+    print(f"job_variables pip_packages: {len(jv['pip_packages'])} entries (prefect/griffe omitted for Managed)")
 
 
 if __name__ == "__main__":
