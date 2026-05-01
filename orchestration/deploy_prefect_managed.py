@@ -45,12 +45,40 @@ Run::
 
 Then trigger **one-time-seed** once from the UI for historical Kaggle load, or
 wait for **scheduled** ``full_pipeline`` cron.
+
+**Job variables:** This script sets ``pip_packages`` from **all** lines in
+``requirements.txt`` (including **PySpark**). PySpark needs a **Java 11+ JDK**
+on the worker: if the JVM is missing, ``bronze_to_silver`` still catches errors
+and falls back to **pandas**. For **guaranteed** Spark, run flows on
+**your own compute** (e.g. EC2) with ``java-17-*`` installed and ``JAVA_HOME``
+set in the deployment ``env``. Prefect Managed may or may not provide Java —
+check flow logs for ``spark_loaded_bronze`` vs. ``spark_unavailable_pandas_fallback``.
+
+See: https://docs.prefect.io/latest/guides/managed-execution/
 """
 
 from __future__ import annotations
 
 import os
 import sys
+from pathlib import Path
+
+
+def _managed_pip_packages() -> list[str]:
+    """
+    All non-comment lines from ``requirements.txt`` for Prefect Managed
+    ``pip_packages`` (includes PySpark — ensure Java 11+ on the worker for Spark).
+    """
+    req = Path(__file__).resolve().parent.parent / "requirements.txt"
+    if not req.is_file():
+        return ["pandas", "pyspark>=3.4.0,<4.0.0", "sqlalchemy", "psycopg2-binary", "python-dotenv", "kaggle"]
+    out: list[str] = []
+    for raw in req.read_text(encoding="utf-8").splitlines():
+        line = raw.split("#", 1)[0].strip()
+        if not line:
+            continue
+        out.append(line)
+    return out
 
 
 def _require_git_url() -> tuple[str, str, str]:
@@ -75,6 +103,7 @@ def main() -> None:
     from orchestration.flows import full_pipeline, seed_historical_data
 
     storage = GitRepository(url=repo, branch=branch)
+    jv = {"pip_packages": _managed_pip_packages()}
 
     full_pipeline.from_source(
         source=storage,
@@ -85,6 +114,7 @@ def main() -> None:
         cron="0 */8 * * *",
         tags=["production"],
         description="Ingest + transform every 8h (Prefect Managed, Git source).",
+        job_variables=jv,
     )
 
     seed_historical_data.from_source(
@@ -95,9 +125,11 @@ def main() -> None:
         work_pool_name=pool,
         tags=["setup"],
         description="Kaggle historical seed — run manually once.",
+        job_variables=jv,
     )
 
     print(f"Deployed to pool {pool!r} from {repo!r} branch {branch!r}")
+    print(f"job_variables pip_packages: {len(jv['pip_packages'])} requirements (PySpark included — needs JVM)")
 
 
 if __name__ == "__main__":
