@@ -10,10 +10,18 @@ Schedule rationale:
   Running every 8h (3x/day) keeps us safely under that limit.
   Adzuna's free tier (250 req/day) is not a concern at this frequency.
 
-Run:  python -m orchestration.schedules
+Local / self-hosted Prefect + process work pool::
 
-Work pool: On Prefect Cloud Hobby tier, create a *Managed* pool (not ``process``):
-``prefect work-pool create jm-process --type prefect:managed``
+  python -m orchestration.schedules
+
+Prefect Cloud **Managed** (must use Git, not a Windows path)::
+
+  set PREFECT_GIT_REPOSITORY=https://github.com/YOUR_ORG/your-repo.git
+  python -m orchestration.deploy_prefect_managed
+
+Create managed pool once::
+
+  prefect work-pool create jm-process --type prefect:managed
 """
 
 from prefect.client.schemas.schedules import CronSchedule
@@ -28,9 +36,6 @@ def create_deployments() -> list[Deployment]:
         name="scheduled",
         work_pool_name="jm-process",
         schedules=[CronSchedule(cron="0 */8 * * *", timezone="UTC")],
-        parameters={
-            "adzuna_query": "data engineer",
-        },
         tags=["production"],
         description="Runs the full ingestion + transformation pipeline every 8 hours (3x/day). Remotive ToS max is 4x/day.",
     )

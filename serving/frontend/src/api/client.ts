@@ -5,7 +5,12 @@
 
 import axios from "axios";
 
-const BASE_URL = import.meta.env.VITE_API_URL ?? "http://localhost:8000";
+/** Vite exposes only VITE_* at build time; empty string must fall back (e.g. mis-set on Vercel). */
+const raw = import.meta.env.VITE_API_URL;
+const BASE_URL =
+  typeof raw === "string" && raw.trim() !== ""
+    ? raw.trim()
+    : "http://localhost:8000";
 
 export const api = axios.create({
   baseURL: BASE_URL,
