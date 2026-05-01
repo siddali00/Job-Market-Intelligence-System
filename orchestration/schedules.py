@@ -10,7 +10,10 @@ Schedule rationale:
   Running every 8h (3x/day) keeps us safely under that limit.
   Adzuna's free tier (250 req/day) is not a concern at this frequency.
 
-Run:  prefect deploy --all
+Run:  python -m orchestration.schedules
+
+Work pool: On Prefect Cloud Hobby tier, create a *Managed* pool (not ``process``):
+``prefect work-pool create jm-process --type prefect:managed``
 """
 
 from prefect.client.schemas.schedules import CronSchedule
@@ -23,6 +26,7 @@ def create_deployments() -> list[Deployment]:
     pipeline_deployment = Deployment.build_from_flow(
         flow=full_pipeline,
         name="scheduled",
+        work_pool_name="jm-process",
         schedules=[CronSchedule(cron="0 */8 * * *", timezone="UTC")],
         parameters={
             "adzuna_query": "data engineer",
@@ -34,6 +38,7 @@ def create_deployments() -> list[Deployment]:
     seed_deployment = Deployment.build_from_flow(
         flow=seed_historical_data,
         name="one-time-seed",
+        work_pool_name="jm-process",
         schedules=[],   # no schedule — triggered manually
         tags=["setup"],
         description="One-time historical data seed from Kaggle. Run manually at project start.",
