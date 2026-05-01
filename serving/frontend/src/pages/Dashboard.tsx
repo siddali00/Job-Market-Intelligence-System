@@ -137,8 +137,8 @@ export default function Dashboard() {
 
       {error && (
         <div className="rounded-md border border-rose-800/60 bg-rose-950/30 px-3 py-2 text-xs text-rose-200">
-          {error} — is the API running at{" "}
-          <code className="rounded bg-slate-900 px-1">VITE_API_URL</code>?
+          {error} — check that the API is reachable (production uses same-origin{" "}
+          <code className="rounded bg-slate-900 px-1">/api</code> via Vercel → EC2).
         </div>
       )}
 

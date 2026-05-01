@@ -5,12 +5,23 @@
 
 import axios from "axios";
 
-/** Vite exposes only VITE_* at build time; empty string must fall back (e.g. mis-set on Vercel). */
+/**
+ * API base URL for axios.
+ *
+ * **Production (`vite build`):** `baseURL` is always `""` so the browser calls
+ * same-origin `/api/*` only. Vercel `vercel.json` rewrites those to your EC2 backend.
+ * We intentionally ignore `VITE_API_URL` in production so a mistaken
+ * `http://localhost:8000` from CI/env can never be baked into the bundle.
+ *
+ * **Development (`vite dev`):** use optional `VITE_API_URL` (e.g. `http://localhost:8000`)
+ * or leave unset and use the Vite `/api` proxy (see `vite.config.ts`).
+ */
 const raw = import.meta.env.VITE_API_URL;
-const BASE_URL =
-  typeof raw === "string" && raw.trim() !== ""
+const BASE_URL = import.meta.env.PROD
+  ? ""
+  : typeof raw === "string" && raw.trim() !== ""
     ? raw.trim()
-    : "http://localhost:8000";
+    : "";
 
 export const api = axios.create({
   baseURL: BASE_URL,
