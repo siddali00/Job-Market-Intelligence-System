@@ -2,18 +2,30 @@ FROM python:3.11-slim
 
 WORKDIR /app
 
-# Install system dependencies
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    gcc \
-    libpq-dev \
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1
+
+# gcc + libpq-dev: compile psycopg2-binary from source if needed
+# curl: used by Docker healthchecks
+RUN apt-get update \
+    && apt-get upgrade -y \
+    && apt-get install -y --no-install-recommends \
+        gcc \
+        libpq-dev \
+        curl \
     && rm -rf /var/lib/apt/lists/*
+
+# PySpark is installed but Java is not available in this image.
+# All Spark code paths (bronze_to_silver, silver_to_gold, validators) detect this
+# at runtime and fall back to pandas automatically — full functionality is preserved.
+ENV PYSPARK_PYTHON=python3 \
+    PYSPARK_DRIVER_PYTHON=python3
 
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 COPY . .
 
-# Create data directories
 RUN mkdir -p data/bronze data/ge_reports data/mlruns
 
 EXPOSE 8000

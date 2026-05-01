@@ -21,6 +21,7 @@ from datetime import date, datetime
 from typing import Any
 
 from monitoring.logger import get_logger
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 from storage.db import SessionLocal
 from sqlalchemy import text
 
