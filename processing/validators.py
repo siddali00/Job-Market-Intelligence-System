@@ -121,7 +121,7 @@ def _silver_spark() -> dict[str, Any]:
 
     try:
         rows = db.execute(text("""
-            SELECT id, source, raw_hash, title, company_id,
+            SELECT id, source, raw_hash, title, company_name,
                    salary_min, salary_max, remote, posted_at,
                    salary_missing, skill_missing
             FROM jobs

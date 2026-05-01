@@ -1,10 +1,13 @@
 interface FilterBarProps {
   children: React.ReactNode;
+  className?: string;
 }
 
-export function FilterBar({ children }: FilterBarProps) {
+export function FilterBar({ children, className = "" }: FilterBarProps) {
   return (
-    <div className="flex flex-wrap items-center gap-3 bg-gray-900 border border-gray-800 rounded-lg px-4 py-3 mb-6">
+    <div
+      className={`mb-4 flex flex-wrap items-center gap-2 rounded-lg border border-slate-800/80 bg-slate-900/40 px-2.5 py-2 sm:gap-3 sm:px-3 ${className}`}
+    >
       {children}
     </div>
   );
@@ -20,11 +23,11 @@ interface FilterSelectProps {
 export function FilterSelect({ label, value, options, onChange }: FilterSelectProps) {
   return (
     <div className="flex items-center gap-2">
-      <label className="text-xs text-gray-400 whitespace-nowrap">{label}</label>
+      <label className="whitespace-nowrap text-[11px] text-slate-500">{label}</label>
       <select
         value={value}
         onChange={(e) => onChange(e.target.value)}
-        className="bg-gray-800 border border-gray-700 text-sm text-white rounded-md px-2 py-1 focus:outline-none focus:ring-1 focus:ring-brand-500"
+        className="rounded-md border border-slate-700/90 bg-slate-950/60 px-2 py-1 text-sm text-slate-100 focus:outline-none focus:ring-1 focus:ring-sky-500/50"
       >
         {options.map((o) => (
           <option key={o.value} value={o.value}>
@@ -46,13 +49,33 @@ interface FilterInputProps {
 export function FilterInput({ label, value, placeholder, onChange }: FilterInputProps) {
   return (
     <div className="flex items-center gap-2">
-      <label className="text-xs text-gray-400 whitespace-nowrap">{label}</label>
+      <label className="whitespace-nowrap text-[11px] text-slate-500">{label}</label>
       <input
         type="text"
         value={value}
         placeholder={placeholder}
         onChange={(e) => onChange(e.target.value)}
-        className="bg-gray-800 border border-gray-700 text-sm text-white rounded-md px-2 py-1 w-36 focus:outline-none focus:ring-1 focus:ring-brand-500 placeholder:text-gray-600"
+        className="w-36 rounded-md border border-slate-700/90 bg-slate-950/60 px-2 py-1 text-sm text-slate-100 placeholder:text-slate-600 focus:outline-none focus:ring-1 focus:ring-sky-500/50"
+      />
+    </div>
+  );
+}
+
+interface FilterDateProps {
+  label: string;
+  value: string;
+  onChange: (v: string) => void;
+}
+
+export function FilterDate({ label, value, onChange }: FilterDateProps) {
+  return (
+    <div className="flex items-center gap-1.5">
+      <label className="whitespace-nowrap text-[11px] text-slate-500">{label}</label>
+      <input
+        type="date"
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        className="rounded border border-slate-700/90 bg-slate-950/60 px-1.5 py-0.5 text-[11px] text-slate-200 focus:outline-none focus:ring-1 focus:ring-sky-500/50"
       />
     </div>
   );

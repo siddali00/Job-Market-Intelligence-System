@@ -1,10 +1,12 @@
 """
-GET /api/skills/trending  — top N skills ranked by growth rate over a date range
+GET /api/skills/trending   — top N skills in a date range
+GET /api/skills/timeseries — daily series for selected skills
+GET /api/skills/yearly     — year-over-year: top 10 skills, or every skill (one line each)
 GET /api/skills/cooccurrence — skill pairs most often seen together
 """
 
 from datetime import date, datetime, timezone
-from typing import Annotated
+from typing import Annotated, Literal
 
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy import text
@@ -105,3 +107,116 @@ def get_skill_cooccurrence(
         "data": [{"skill_a": r[0], "skill_b": r[1], "co_count": r[2]} for r in rows],
         "data_freshness": datetime.now(timezone.utc).isoformat(),
     }
+
+
+def _pivot_yearly_skill_rows(
+    rows: list,
+    *,
+    compare: Literal["top10", "all"],
+    data_freshness: str,
+    ranking_fallback: list[dict],
+) -> dict:
+    """Build years, skills, chart, ranking from (year, skill, total_jobs) query rows."""
+    if not rows:
+        return {
+            "compare": compare,
+            "years": [],
+            "skills": [],
+            "chart": [],
+            "ranking": ranking_fallback,
+            "data_freshness": data_freshness,
+        }
+
+    per_year: dict[int, dict[str, int]] = {}
+    skill_totals: dict[str, int] = {}
+    years_set: set[int] = set()
+    for y, skill, tot in rows:
+        years_set.add(int(y))
+        if int(y) not in per_year:
+            per_year[int(y)] = {}
+        per_year[int(y)][skill] = int(tot)
+        skill_totals[skill] = skill_totals.get(skill, 0) + int(tot)
+
+    years = sorted(years_set)
+    skills = sorted(
+        skill_totals.keys(),
+        key=lambda s: skill_totals[s],
+        reverse=True,
+    )
+    chart: list[dict] = []
+    for y in years:
+        row: dict = {"year": y}
+        for s in skills:
+            row[s] = per_year.get(y, {}).get(s, 0)
+        chart.append(row)
+
+    ranking = [{"skill": s, "total_jobs": skill_totals[s]} for s in skills]
+    return {
+        "compare": compare,
+        "years": years,
+        "skills": skills,
+        "chart": chart,
+        "ranking": ranking,
+        "data_freshness": data_freshness,
+    }
+
+
+@router.get("/yearly")
+def get_skills_yearly(
+    compare: Literal["top10", "all"] = "top10",
+    db: Session = Depends(get_db),
+):
+    """
+    Year-over-year demand from ``daily_skill_demand`` (post-2000 dates only).
+
+    * **top10** — one line per skill for the **10** highest all-time skill totals.
+    * **all** — one line **per skill** for **every** skill in gold (same shape as top10, no cap).
+    """
+    fresh = datetime.now(timezone.utc).isoformat()
+
+    sql_rank_all = text("""
+        SELECT skill, SUM(job_count)::bigint AS total_jobs
+        FROM daily_skill_demand
+        WHERE date >= DATE '2000-01-01'
+        GROUP BY skill
+        ORDER BY total_jobs DESC
+    """)
+    ranking_rows = db.execute(sql_rank_all).fetchall()
+    ranking_fallback = [{"skill": r[0], "total_jobs": int(r[1])} for r in ranking_rows]
+
+    if compare == "all":
+        sql = text("""
+            SELECT
+                EXTRACT(YEAR FROM d.date)::integer AS y,
+                d.skill,
+                SUM(d.job_count)::bigint AS total_jobs
+            FROM daily_skill_demand d
+            WHERE d.date >= DATE '2000-01-01'
+            GROUP BY 1, 2
+            ORDER BY 1, 3 DESC
+        """)
+        rows = db.execute(sql).fetchall()
+        return _pivot_yearly_skill_rows(rows, compare="all", data_freshness=fresh, ranking_fallback=ranking_fallback)
+
+    # top10
+    sql = text("""
+        WITH top_skills AS (
+            SELECT skill
+            FROM daily_skill_demand
+            WHERE date >= DATE '2000-01-01'
+            GROUP BY skill
+            ORDER BY SUM(job_count) DESC
+            LIMIT 10
+        )
+        SELECT
+            EXTRACT(YEAR FROM d.date)::integer AS y,
+            d.skill,
+            SUM(d.job_count)::bigint AS total_jobs
+        FROM daily_skill_demand d
+        INNER JOIN top_skills t ON t.skill = d.skill
+        WHERE d.date >= DATE '2000-01-01'
+        GROUP BY 1, 2
+        ORDER BY 1, 3 DESC
+    """)
+    rows = db.execute(sql).fetchall()
+    return _pivot_yearly_skill_rows(rows, compare="top10", data_freshness=fresh, ranking_fallback=ranking_fallback)

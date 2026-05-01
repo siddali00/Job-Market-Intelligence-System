@@ -44,39 +44,46 @@ export default function Predictions() {
 
   return (
     <div className="max-w-2xl">
-      <h1 className="text-2xl font-bold text-white mb-1">Salary Prediction</h1>
-      <p className="text-gray-400 text-sm mb-6">
-        Enter a job profile to get a predicted salary range. The model will activate once enough data has been collected and training is run.
+      <p className="text-[10px] font-semibold uppercase tracking-wider text-sky-500/90"> What-if </p>
+      <h1 className="mb-0.5 text-lg font-semibold text-slate-100">Salary prediction</h1>
+      <p className="mb-4 text-xs text-slate-500">
+        Describe a role to estimate a range. The model activates after enough data and a training run.
       </p>
 
-      <form onSubmit={handleSubmit} className="bg-gray-900 border border-gray-800 rounded-lg p-6 space-y-4">
+      <form
+        onSubmit={handleSubmit}
+        className="space-y-3 rounded-lg border border-slate-800/80 bg-slate-900/30 p-4"
+      >
         <div>
-          <label className="block text-xs text-gray-400 mb-1">Job Title *</label>
+          <label className="mb-1 block text-[11px] text-slate-500">Job title *</label>
           <input
             required
             value={title}
             onChange={(e) => setTitle(e.target.value)}
             placeholder="e.g. Data Engineer"
-            className="w-full bg-gray-800 border border-gray-700 rounded-md px-3 py-2 text-sm text-white focus:outline-none focus:ring-1 focus:ring-brand-500 placeholder:text-gray-600"
+            className="w-full rounded-md border border-slate-700/90 bg-slate-950/60 px-3 py-2 text-sm text-slate-100 placeholder:text-slate-600 focus:outline-none focus:ring-1 focus:ring-sky-500/50"
           />
         </div>
 
         <div>
-          <label className="block text-xs text-gray-400 mb-1">Location *</label>
+          <label className="mb-1 block text-[11px] text-slate-500">Location *</label>
           <input
             required
             value={location}
             onChange={(e) => setLocation(e.target.value)}
             placeholder="e.g. San Francisco, CA or Remote"
-            className="w-full bg-gray-800 border border-gray-700 rounded-md px-3 py-2 text-sm text-white focus:outline-none focus:ring-1 focus:ring-brand-500 placeholder:text-gray-600"
+            className="w-full rounded-md border border-slate-700/90 bg-slate-950/60 px-3 py-2 text-sm text-slate-100 placeholder:text-slate-600 focus:outline-none focus:ring-1 focus:ring-sky-500/50"
           />
         </div>
 
         <div>
-          <label className="block text-xs text-gray-400 mb-1">Skills</label>
+          <label className="mb-1 block text-[11px] text-slate-500">Skills</label>
           <div className="flex gap-2 mb-2 flex-wrap">
             {skills.map((s) => (
-              <span key={s} className="inline-flex items-center gap-1 bg-brand-900/50 text-brand-300 text-xs px-2 py-1 rounded-full">
+              <span
+                key={s}
+                className="inline-flex items-center gap-1 rounded-full bg-sky-950/80 px-2 py-0.5 text-xs text-sky-300"
+              >
                 {s}
                 <button type="button" onClick={() => removeSkill(s)} className="hover:text-white">×</button>
               </span>
@@ -88,7 +95,7 @@ export default function Predictions() {
               onChange={(e) => setSkillInput(e.target.value)}
               onKeyDown={(e) => e.key === "Enter" && (e.preventDefault(), addSkill(skillInput))}
               placeholder="Type a skill and press Enter"
-              className="flex-1 bg-gray-800 border border-gray-700 rounded-md px-3 py-2 text-sm text-white focus:outline-none focus:ring-1 focus:ring-brand-500 placeholder:text-gray-600"
+              className="flex-1 rounded-md border border-slate-700/90 bg-slate-950/60 px-3 py-2 text-sm text-slate-100 placeholder:text-slate-600 focus:outline-none focus:ring-1 focus:ring-sky-500/50"
             />
           </div>
           <div className="flex flex-wrap gap-1.5 mt-2">
@@ -97,7 +104,7 @@ export default function Predictions() {
                 key={s}
                 type="button"
                 onClick={() => addSkill(s)}
-                className="text-xs text-gray-500 hover:text-white bg-gray-800 hover:bg-gray-700 px-2 py-0.5 rounded transition-colors"
+                className="rounded px-2 py-0.5 text-xs text-slate-500 transition-colors hover:bg-slate-800 hover:text-slate-200"
               >
                 + {s}
               </button>
@@ -111,15 +118,15 @@ export default function Predictions() {
             id="remote"
             checked={remote}
             onChange={(e) => setRemote(e.target.checked)}
-            className="w-4 h-4 accent-brand-500"
+            className="h-4 w-4 accent-sky-500"
           />
-          <label htmlFor="remote" className="text-sm text-gray-300">Remote position</label>
+          <label htmlFor="remote" className="text-sm text-slate-300">Remote position</label>
         </div>
 
         <button
           type="submit"
           disabled={loading}
-          className="w-full flex items-center justify-center gap-2 bg-brand-600 hover:bg-brand-700 disabled:opacity-50 text-white font-medium py-2 rounded-md transition-colors"
+          className="flex w-full items-center justify-center gap-2 rounded-md bg-sky-600 py-2 font-medium text-white transition-colors hover:bg-sky-700 disabled:opacity-50"
         >
           {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Brain className="w-4 h-4" />}
           {loading ? "Predicting…" : "Predict Salary"}

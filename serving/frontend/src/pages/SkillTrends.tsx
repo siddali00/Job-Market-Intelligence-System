@@ -1,105 +1,194 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
-  LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip,
-  ResponsiveContainer, Legend, BarChart, Bar,
+  LineChart,
+  Line,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  ResponsiveContainer,
+  Legend,
+  BarChart,
+  Bar,
 } from "recharts";
-import { fetchTrendingSkills, fetchSkillTimeseries, type TrendingSkill, type SkillTimeseries } from "../api/client";
+import { fetchSkillsYearly, type SkillsYearlyResponse } from "../api/client";
 import MetricCard from "../components/MetricCard";
 import { FilterBar, FilterSelect } from "../components/FilterBar";
 
-const COLORS = ["#3b82f6", "#10b981", "#f59e0b", "#ef4444", "#8b5cf6", "#06b6d4"];
-const TOP_N_OPTIONS = [
-  { value: "10", label: "Top 10" },
-  { value: "20", label: "Top 20" },
-  { value: "30", label: "Top 30" },
+const COLORS = [
+  "#0ea5e9",
+  "#10b981",
+  "#f59e0b",
+  "#f43f5e",
+  "#8b5cf6",
+  "#06b6d4",
+  "#ec4899",
+  "#a3e635",
+  "#94a3b8",
+  "#f97316",
+  "#22d3ee",
+  "#c084fc",
+  "#4ade80",
 ];
-const DEFAULT_SKILLS = ["python", "sql", "spark", "aws", "docker"];
+
+const COMPARE_OPTIONS = [
+  { value: "top10", label: "Compare top 10 skills" },
+  { value: "all", label: "Compare all skills" },
+];
 
 export default function SkillTrends() {
-  const [trending, setTrending] = useState<TrendingSkill[]>([]);
-  const [timeseries, setTimeseries] = useState<SkillTimeseries[]>([]);
-  const [topN, setTopN] = useState("20");
+  const [compare, setCompare] = useState<"top10" | "all">("top10");
+  const [yearly, setYearly] = useState<SkillsYearlyResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     setLoading(true);
-    Promise.all([
-      fetchTrendingSkills(parseInt(topN)),
-      fetchSkillTimeseries(DEFAULT_SKILLS),
-    ])
-      .then(([trendData, tsData]) => {
-        setTrending(trendData.data);
-        setTimeseries(tsData.data);
+    fetchSkillsYearly(compare)
+      .then((d) => {
+        setYearly(d);
         setError(null);
       })
       .catch((e) => setError(e.message))
       .finally(() => setLoading(false));
-  }, [topN]);
+  }, [compare]);
 
-  // Reshape timeseries for recharts: [{date, python: 12, sql: 9, ...}]
-  const timeseriesMap: Record<string, Record<string, number>> = {};
-  for (const row of timeseries) {
-    if (!timeseriesMap[row.date]) timeseriesMap[row.date] = { date: row.date as unknown as number };
-    timeseriesMap[row.date][row.skill] = row.job_count;
-  }
-  const chartData = Object.values(timeseriesMap).sort((a, b) =>
-    String(a.date).localeCompare(String(b.date))
+  const chart = yearly?.chart ?? [];
+  const skills = yearly?.skills ?? [];
+  const years = yearly?.years ?? [];
+  const ranking = yearly?.ranking ?? [];
+  const mode = yearly?.compare ?? compare;
+
+  const barData = useMemo(
+    () => ranking.map((r) => ({ skill: r.skill, total: r.total_jobs })),
+    [ranking]
   );
 
-  const skills = [...new Set(timeseries.map((r) => r.skill))];
+  const top = ranking[0];
+  const totalVolume = useMemo(
+    () => ranking.reduce((s, r) => s + r.total_jobs, 0),
+    [ranking]
+  );
+
+  const manyLines = skills.length > 24;
+  const lineStroke = manyLines ? 1 : 2;
+  const showDots = skills.length <= 15;
+
+  const chartTitle =
+    mode === "all"
+      ? `Year-over-year (each skill, ${skills.length} lines)`
+      : "Year-over-year (top 10 skills)";
+
+  const barTitle =
+    mode === "all" ? "All-time totals (every skill)" : "All-time totals (top 10 skills)";
 
   return (
     <div>
-      <h1 className="text-2xl font-bold text-white mb-1">Skill Trends</h1>
-      <p className="text-gray-400 text-sm mb-6">Track which technical skills are growing fastest in demand.</p>
+      <p className="text-[10px] font-semibold uppercase tracking-wider text-sky-500/90"> Demand </p>
+      <h1 className="mb-0.5 text-lg font-semibold text-slate-100">Skill trends</h1>
+      <p className="mb-3 max-w-2xl text-xs leading-relaxed text-slate-500">
+        <strong className="text-slate-400">Top 10</strong>: one line per skill for the ten largest skills.{" "}
+        <strong className="text-slate-400">All skills</strong>: the same chart, but{" "}
+        <strong className="text-slate-400">one line for every skill</strong> in your index (legend scrolls;
+        hover a year to read values). Dense lines are drawn thinner so the chart stays readable.
+      </p>
 
       {error && (
-        <div className="bg-red-900/30 border border-red-700 text-red-300 rounded-lg px-4 py-3 mb-6 text-sm">
-          {error} — make sure the API is running and data has been ingested.
+        <div className="mb-4 rounded-lg border border-rose-800/50 bg-rose-950/30 px-3 py-2 text-xs text-rose-200">
+          {error} — is the API running, and has silver→gold built skill demand?
         </div>
       )}
 
       <FilterBar>
-        <FilterSelect label="Show" value={topN} options={TOP_N_OPTIONS} onChange={setTopN} />
+        <FilterSelect
+          label="View"
+          value={compare}
+          options={COMPARE_OPTIONS}
+          onChange={(v) => setCompare(v as "top10" | "all")}
+        />
       </FilterBar>
 
-      {/* Summary metrics */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-6">
-        <MetricCard label="Skills tracked" value={trending.length} />
+      <div className="mb-3 grid grid-cols-2 gap-1.5 sm:grid-cols-4">
         <MetricCard
-          label="Top skill"
-          value={trending[0]?.skill ?? "—"}
-          subtitle={`${trending[0]?.total_jobs ?? 0} jobs`}
+          size="sm"
+          label="Years in index"
+          value={loading ? "…" : years.length}
+        />
+        <MetricCard
+          size="sm"
+          label="Lines on chart"
+          value={loading ? "…" : skills.length}
+        />
+        <MetricCard
+          size="sm"
+          label="Top skill (all-time)"
+          value={top?.skill ?? "—"}
+          subtitle={top ? `${top.total_jobs.toLocaleString()} job-days` : ""}
           highlight
         />
-        <MetricCard label="7d avg (top)" value={trending[0]?.peak_7d_avg?.toFixed(1) ?? "—"} subtitle="postings/day" />
-        <MetricCard label="Data points" value={timeseries.length} />
+        <MetricCard
+          size="sm"
+          label="Volume (all-time sum)"
+          value={loading ? "…" : totalVolume.toLocaleString()}
+          subtitle="Σ job-days"
+        />
       </div>
 
-      {/* Line chart: skill demand over time */}
-      <div className="bg-gray-900 border border-gray-800 rounded-lg p-4 mb-6">
-        <h2 className="text-sm font-semibold text-gray-300 mb-4">Daily Demand Over Time</h2>
+      <div className="mb-3 rounded-lg border border-slate-800/80 bg-slate-900/30 p-3">
+        <h2 className="mb-2 text-[11px] font-semibold uppercase tracking-wider text-slate-500">
+          {chartTitle}
+        </h2>
         {loading ? (
-          <div className="h-64 flex items-center justify-center text-gray-500">Loading…</div>
-        ) : chartData.length === 0 ? (
-          <div className="h-64 flex items-center justify-center text-gray-500">No data yet — run the pipeline first.</div>
+          <div className="flex h-64 items-center justify-center text-sm text-slate-500">Loading…</div>
+        ) : chart.length === 0 ? (
+          <div className="flex flex-col items-center justify-center gap-1 px-4 py-12 text-center text-sm text-slate-500">
+            <span>No yearly data yet.</span>
+            <span className="text-xs text-slate-600">Run the pipeline to populate daily_skill_demand.</span>
+          </div>
         ) : (
-          <ResponsiveContainer width="100%" height={280}>
-            <LineChart data={chartData}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#374151" />
-              <XAxis dataKey="date" tick={{ fontSize: 11, fill: "#9ca3af" }} />
-              <YAxis tick={{ fontSize: 11, fill: "#9ca3af" }} />
-              <Tooltip contentStyle={{ background: "#111827", border: "1px solid #374151", borderRadius: 6 }} />
-              <Legend />
+          <ResponsiveContainer width="100%" height={mode === "all" ? 340 : 300}>
+            <LineChart data={chart} margin={{ top: 4, right: 8, left: 0, bottom: 0 }}>
+              <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
+              <XAxis
+                dataKey="year"
+                type="number"
+                domain={["dataMin", "dataMax"]}
+                allowDecimals={false}
+                tick={{ fontSize: 10, fill: "#94a3b8" }}
+              />
+              <YAxis tick={{ fontSize: 10, fill: "#94a3b8" }} />
+              <Tooltip
+                contentStyle={{
+                  background: "#0f172a",
+                  border: "1px solid #334155",
+                  borderRadius: 6,
+                  fontSize: 11,
+                  maxHeight: 280,
+                  overflowY: "auto",
+                }}
+              />
+              <Legend
+                layout="vertical"
+                align="right"
+                verticalAlign="middle"
+                wrapperStyle={{
+                  maxHeight: mode === "all" ? 300 : 200,
+                  overflowY: "auto",
+                  fontSize: manyLines ? 9 : 10,
+                  paddingLeft: 8,
+                }}
+                iconSize={manyLines ? 6 : 8}
+              />
               {skills.map((skill, i) => (
                 <Line
                   key={skill}
                   type="monotone"
                   dataKey={skill}
+                  name={skill}
                   stroke={COLORS[i % COLORS.length]}
-                  dot={false}
-                  strokeWidth={2}
+                  dot={showDots ? { r: 2 } : false}
+                  strokeWidth={lineStroke}
+                  isAnimationActive={skills.length < 80}
                 />
               ))}
             </LineChart>
@@ -107,25 +196,55 @@ export default function SkillTrends() {
         )}
       </div>
 
-      {/* Bar chart: top N skills by total jobs */}
-      <div className="bg-gray-900 border border-gray-800 rounded-lg p-4">
-        <h2 className="text-sm font-semibold text-gray-300 mb-4">Top Skills by Total Job Postings</h2>
+      <div className="rounded-lg border border-slate-800/80 bg-slate-900/30 p-3">
+        <h2 className="mb-2 text-[11px] font-semibold uppercase tracking-wider text-slate-500">
+          {barTitle}
+        </h2>
         {loading ? (
-          <div className="h-64 flex items-center justify-center text-gray-500">Loading…</div>
-        ) : trending.length === 0 ? (
-          <div className="h-64 flex items-center justify-center text-gray-500">No data yet.</div>
+          <div className="flex h-72 items-center justify-center text-sm text-slate-500">Loading…</div>
+        ) : barData.length === 0 ? (
+          <div className="flex h-64 items-center justify-center text-sm text-slate-500">No data.</div>
         ) : (
-          <ResponsiveContainer width="100%" height={300}>
-            <BarChart data={trending.slice(0, 15)} layout="vertical">
-              <CartesianGrid strokeDasharray="3 3" stroke="#374151" horizontal={false} />
-              <XAxis type="number" tick={{ fontSize: 11, fill: "#9ca3af" }} />
-              <YAxis dataKey="skill" type="category" tick={{ fontSize: 11, fill: "#9ca3af" }} width={90} />
-              <Tooltip contentStyle={{ background: "#111827", border: "1px solid #374151", borderRadius: 6 }} />
-              <Bar dataKey="total_jobs" fill="#3b82f6" radius={[0, 4, 4, 0]} />
-            </BarChart>
-          </ResponsiveContainer>
+          <div className={mode === "all" ? "max-h-[28rem] overflow-y-auto pr-1" : ""}>
+            <ResponsiveContainer
+              width="100%"
+              height={mode === "all" ? Math.min(1200, Math.max(360, barData.length * 22)) : 320}
+            >
+              <BarChart data={barData} layout="vertical" margin={{ left: 4, right: 8 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#334155" horizontal={false} />
+                <XAxis type="number" tick={{ fontSize: 10, fill: "#94a3b8" }} />
+                <YAxis
+                  dataKey="skill"
+                  type="category"
+                  tick={{ fontSize: mode === "all" ? 8 : 9, fill: "#94a3b8" }}
+                  width={mode === "all" ? 100 : 110}
+                />
+                <Tooltip
+                  contentStyle={{
+                    background: "#0f172a",
+                    border: "1px solid #334155",
+                    borderRadius: 6,
+                    fontSize: 11,
+                  }}
+                  formatter={(v: number) => [v.toLocaleString(), "job-days"]}
+                />
+                <Bar dataKey="total" fill="#0ea5e9" radius={[0, 3, 3, 0]} name="All-time job-days" />
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+        )}
+        {mode === "all" && barData.length > 0 && (
+          <p className="mt-2 text-center text-[10px] text-slate-600">
+            {barData.length} skills — scroll the chart if needed
+          </p>
         )}
       </div>
+
+      {yearly?.data_freshness && (
+        <p className="mt-2 text-center text-[10px] text-slate-600">
+          API: {new Date(yearly.data_freshness).toLocaleString()}
+        </p>
+      )}
     </div>
   );
 }

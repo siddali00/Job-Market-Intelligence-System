@@ -16,7 +16,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from config.settings import get_settings
 from monitoring.logger import get_logger
-from serving.api.routers import skills, salaries, roles, remote, alerts, predict, health
+from serving.api.routers import skills, salaries, roles, remote, alerts, predict, health, overview
 
 settings = get_settings()
 logger = get_logger(__name__)
@@ -114,6 +114,7 @@ app.add_middleware(
 )
 
 app.include_router(health.router, tags=["health"])
+app.include_router(overview.router, prefix="/api/overview", tags=["overview"])
 app.include_router(skills.router, prefix="/api/skills", tags=["skills"])
 app.include_router(salaries.router, prefix="/api/salaries", tags=["salaries"])
 app.include_router(roles.router, prefix="/api/roles", tags=["roles"])

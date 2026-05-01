@@ -4,6 +4,7 @@
 
 @layer base {
   body {
-    @apply bg-gray-950 text-gray-100 antialiased;
+    @apply min-h-screen bg-slate-950 text-slate-100 antialiased;
+    background-image: radial-gradient(ellipse 120% 80% at 50% -20%, rgb(15 23 42 / 0.5), transparent);
   }
 }

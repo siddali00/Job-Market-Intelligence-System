@@ -80,6 +80,58 @@ export interface PredictResponse {
   message: string;
 }
 
+export interface OverviewMetrics {
+  window: { start_date: string; end_date: string };
+  jobs_in_window: number;
+  jobs_total: number;
+  demand_date_range: { min: string | null; max: string | null };
+  distinct_roles: number;
+  distinct_skills: number;
+  salary_summary_rows: number;
+  distinct_countries_salary: number;
+  cooccurrence_rows: number;
+  alerts_today: number;
+  alerts_last_7d: number;
+  last_alert_date: string | null;
+  remote: {
+    total_remote: number;
+    total_onsite: number;
+    remote_pct: number | null;
+  };
+  data_freshness: string;
+}
+
+export interface TopRole {
+  role: string;
+  total_jobs: number;
+}
+
+export interface RemoteSummary {
+  total_remote: number;
+  total_onsite: number;
+  remote_pct: number | null;
+  data_freshness: string;
+}
+
+export interface CooccurrenceRow {
+  skill_a: string;
+  skill_b: string;
+  co_count: number;
+}
+
+/** Row for year-over-year chart: one object per year with numeric keys per skill + year */
+export type YearlyChartRow = { year: number } & Record<string, number | string>;
+
+export interface SkillsYearlyResponse {
+  compare: "top10" | "all";
+  years: number[];
+  /** One entry per skill line in the year-over-year chart */
+  skills: string[];
+  chart: YearlyChartRow[];
+  ranking: { skill: string; total_jobs: number }[];
+  data_freshness: string;
+}
+
 // ── API helper functions ────────────────────────────────────────────────────
 
 export async function fetchTrendingSkills(topN = 20, startDate?: string, endDate?: string) {
@@ -125,5 +177,45 @@ export async function fetchAlerts(alertDate?: string, entityType?: "role" | "ski
 
 export async function predictSalary(request: PredictRequest) {
   const { data } = await api.post<PredictResponse>("/api/predict/salary", request);
+  return data;
+}
+
+export async function fetchOverviewMetrics(startDate?: string, endDate?: string) {
+  const params: Record<string, string> = {};
+  if (startDate) params.start_date = startDate;
+  if (endDate) params.end_date = endDate;
+  const { data } = await api.get<OverviewMetrics>("/api/overview/metrics", { params });
+  return data;
+}
+
+export async function fetchTopRoles(
+  topN = 10,
+  startDate?: string,
+  endDate?: string
+) {
+  const params: Record<string, string | number> = { top_n: topN };
+  if (startDate) params.start_date = startDate;
+  if (endDate) params.end_date = endDate;
+  const { data } = await api.get<{ data: TopRole[] }>("/api/roles/top", { params });
+  return data;
+}
+
+export async function fetchRemoteSummary() {
+  const { data } = await api.get<RemoteSummary>("/api/remote/summary");
+  return data;
+}
+
+export async function fetchCooccurrence(topN = 15) {
+  const { data } = await api.get<{ data: CooccurrenceRow[] }>("/api/skills/cooccurrence", {
+    params: { top_n: topN },
+  });
+  return data;
+}
+
+/** Full-history yearly aggregates; no date filter. */
+export async function fetchSkillsYearly(compare: "top10" | "all" = "top10") {
+  const { data } = await api.get<SkillsYearlyResponse>("/api/skills/yearly", {
+    params: { compare },
+  });
   return data;
 }

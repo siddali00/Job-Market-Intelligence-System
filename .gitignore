@@ -19,6 +19,9 @@ env/
 # Data (raw + generated — large files)
 data/
 
+# Spark JDBC driver (auto-downloaded for silver_to_gold)
+jars/
+
 # Alembic
 alembic.ini
 

@@ -1,5 +1,6 @@
-import { Routes, Route, Navigate } from "react-router-dom";
+import { Routes, Route } from "react-router-dom";
 import Navbar from "./components/Navbar";
+import Dashboard from "./pages/Dashboard";
 import SkillTrends from "./pages/SkillTrends";
 import SalaryExplorer from "./pages/SalaryExplorer";
 import MarketAlerts from "./pages/MarketAlerts";
@@ -9,9 +10,9 @@ export default function App() {
   return (
     <div className="min-h-screen flex flex-col">
       <Navbar />
-      <main className="flex-1 container mx-auto px-4 py-6 max-w-7xl">
+      <main className="flex-1 container mx-auto px-3 py-4 sm:px-4 sm:py-5 max-w-7xl">
         <Routes>
-          <Route path="/" element={<Navigate to="/skills" replace />} />
+          <Route path="/" element={<Dashboard />} />
           <Route path="/skills" element={<SkillTrends />} />
           <Route path="/salaries" element={<SalaryExplorer />} />
           <Route path="/alerts" element={<MarketAlerts />} />
