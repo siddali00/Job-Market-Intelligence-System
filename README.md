@@ -10,6 +10,12 @@ via a FastAPI backend and React dashboard.
 - Burhan Ahmed
 - Muhammad Ali Siddique
 
+## Data pipeline (detailed)
+
+For Bronze / Silver / Gold, Spark vs Pandas vs SQL, Prefect flows (`full_pipeline`, `ingest_flow`, `transform_flow`, `seed_historical_data`), UI metrics, and why the dashboard shows a capped subset of rows, see **[docs/DATA_PIPELINE.md](docs/DATA_PIPELINE.md)**.
+
+---
+
 ## Architecture (Current)
 
 ```
@@ -28,9 +34,9 @@ Kaggle -------+                                                                 
 ```
 
 Notes:
-- Kaggle seed currently runs in **ingestion-only** mode (raw storage + raw tables).
-- Kaggle data is intentionally **not** inserted into `jobs` / `kaggle_job_details` right now.
-- A dedicated normalization command (`raw_pipeline.py`) builds `unified_jobs_wide`.
+- **Default dashboard path:** Prefect `full_pipeline` → Bronze → **`jobs` / Silver** → **Gold** → FastAPI. Full detail: [docs/DATA_PIPELINE.md](docs/DATA_PIPELINE.md).
+- **`seed_historical_data`** only runs Kaggle → **Bronze** (no Silver/Gold in that flow). Run `full_pipeline` or `transform_flow` with the same **`run_date`** as the Bronze partition to load those rows into `jobs` and refresh Gold.
+- **`raw_pipeline.py` → `unified_jobs_wide`** is an **alternate** wide-table path; the routers under `serving/api/` query **`jobs` + Gold**, not `unified_jobs_wide`, unless you change that wiring.
 
 ---
 
