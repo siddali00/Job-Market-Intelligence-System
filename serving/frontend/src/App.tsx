@@ -3,7 +3,6 @@ import Navbar from "./components/Navbar";
 import Dashboard from "./pages/Dashboard";
 import SkillTrends from "./pages/SkillTrends";
 import SalaryExplorer from "./pages/SalaryExplorer";
-import MarketAlerts from "./pages/MarketAlerts";
 import Predictions from "./pages/Predictions";
 
 export default function App() {
@@ -15,7 +14,6 @@ export default function App() {
           <Route path="/" element={<Dashboard />} />
           <Route path="/skills" element={<SkillTrends />} />
           <Route path="/salaries" element={<SalaryExplorer />} />
-          <Route path="/alerts" element={<MarketAlerts />} />
           <Route path="/predictions" element={<Predictions />} />
         </Routes>
       </main>

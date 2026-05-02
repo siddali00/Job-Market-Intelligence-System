@@ -2,7 +2,6 @@ import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import {
   ArrowRight,
-  Bell,
   Brain,
   Briefcase,
   Globe2,
@@ -10,14 +9,12 @@ import {
   Sparkles,
 } from "lucide-react";
 import {
-  fetchAlerts,
   fetchCooccurrence,
   fetchOverviewMetrics,
   fetchSalaries,
   fetchTopRoles,
   fetchTrendingSkills,
   type CooccurrenceRow,
-  type MarketAlert,
   type OverviewMetrics,
   type SalarySummary,
   type TopRole,
@@ -63,7 +60,6 @@ export default function Dashboard() {
   const [topRoles, setTopRoles] = useState<TopRole[]>([]);
   const [cooc, setCooc] = useState<CooccurrenceRow[]>([]);
   const [salaryTop, setSalaryTop] = useState<SalarySummary[]>([]);
-  const [alerts, setAlerts] = useState<MarketAlert[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -76,13 +72,11 @@ export default function Dashboard() {
         const m = await fetchOverviewMetrics(start, end);
         if (cancelled) return;
         setMetrics(m);
-        const alertDate = m.last_alert_date || m.window.end_date;
-        const [trend, roles, pairs, sal, al] = await Promise.all([
+        const [trend, roles, pairs, sal] = await Promise.all([
           fetchTrendingSkills(15, start, end),
           fetchTopRoles(10, start, end),
           fetchCooccurrence(12),
           fetchSalaries(),
-          fetchAlerts(alertDate),
         ]);
         if (cancelled) return;
         setTrending(trend.data);
@@ -92,7 +86,6 @@ export default function Dashboard() {
           .filter((r) => r.salary_median != null)
           .sort((a, b) => (b.salary_median ?? 0) - (a.salary_median ?? 0));
         setSalaryTop(byMed.slice(0, 8));
-        setAlerts(al.data.slice(0, 12));
       } catch (e) {
         if (!cancelled) setError(e instanceof Error ? e.message : "Failed to load dashboard");
       } finally {
@@ -143,7 +136,7 @@ export default function Dashboard() {
       )}
 
       {/* KPI row */}
-      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-1.5">
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-1.5">
         <MetricCard
           size="sm"
           label="Postings in window"
@@ -167,12 +160,6 @@ export default function Dashboard() {
           label="Salary bands"
           value={loading ? "…" : (metrics?.salary_summary_rows ?? 0).toLocaleString()}
           subtitle={`${metrics?.distinct_countries_salary ?? 0} countries`}
-        />
-        <MetricCard
-          size="sm"
-          label="Spikes (7d)"
-          value={loading ? "…" : (metrics?.alerts_last_7d ?? 0).toLocaleString()}
-          subtitle="Market alerts"
         />
         <MetricCard
           size="sm"
@@ -312,51 +299,7 @@ export default function Dashboard() {
         </Panel>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
-        <Panel
-          title="Recent spike alerts"
-          action={
-            <Link
-              to="/alerts"
-              className="inline-flex items-center gap-0.5 text-[10px] font-medium text-sky-400 hover:text-sky-300"
-            >
-              All alerts <ArrowRight className="h-3 w-3" />
-            </Link>
-          }
-        >
-          {alerts.length === 0 && !loading ? (
-            <p className="text-[11px] text-slate-500 py-1">
-              No alerts for the latest run date. Threshold: 7d avg ≥ 2× 30d avg.
-            </p>
-          ) : (
-            <ul className="space-y-0.5">
-              {alerts.map((a, i) => (
-                <li
-                  key={`${a.entity_name}-${i}`}
-                  className="flex items-center justify-between gap-2 text-[11px] text-slate-200 border-b border-slate-800/40 last:border-0 py-0.5"
-                >
-                  <span className="inline-flex items-center gap-1 min-w-0">
-                    <span
-                      className={
-                        a.entity_type === "skill"
-                          ? "text-[9px] uppercase text-sky-500"
-                          : "text-[9px] uppercase text-violet-400"
-                      }
-                    >
-                      {a.entity_type}
-                    </span>
-                    <span className="truncate font-medium">{a.entity_name}</span>
-                  </span>
-                  <span className="text-amber-400/90 tabular-nums shrink-0">
-                    {a.spike_ratio != null ? `${a.spike_ratio.toFixed(1)}×` : "—"}
-                  </span>
-                </li>
-              ))}
-            </ul>
-          )}
-        </Panel>
-
-        <div className="rounded-lg border border-slate-800/80 bg-slate-900/20 p-3">
+      <div className="rounded-lg border border-slate-800/80 bg-slate-900/20 p-3">
           <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-500 mb-2">
             Quick tools
           </p>
@@ -374,13 +317,6 @@ export default function Dashboard() {
             >
               <Briefcase className="h-3.5 w-3.5 text-emerald-500 shrink-0" />
               Salaries
-            </Link>
-            <Link
-              to="/alerts"
-              className="flex items-center gap-1.5 rounded border border-slate-800/80 bg-slate-900/50 px-2 py-1.5 text-[11px] text-slate-200 hover:border-sky-700/50 hover:bg-slate-800/50"
-            >
-              <Bell className="h-3.5 w-3.5 text-amber-500 shrink-0" />
-              Alerts
             </Link>
             <Link
               to="/predictions"
@@ -402,7 +338,6 @@ export default function Dashboard() {
               </span>
             </div>
           </div>
-        </div>
       </div>
     </div>
   );

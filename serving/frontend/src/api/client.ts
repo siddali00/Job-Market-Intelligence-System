@@ -71,15 +71,6 @@ export interface RemoteData {
   remote_ratio: number | null;
 }
 
-export interface MarketAlert {
-  alert_date: string;
-  entity_type: "role" | "skill";
-  entity_name: string;
-  demand_7d_avg: number | null;
-  demand_30d_avg: number | null;
-  spike_ratio: number | null;
-}
-
 export interface PredictRequest {
   title: string;
   location: string;
@@ -180,14 +171,6 @@ export async function fetchRoleDemand(role?: string, startDate?: string, endDate
   if (startDate) params.start_date = startDate;
   if (endDate) params.end_date = endDate;
   const { data } = await api.get<{ data: RoleDemand[] }>("/api/roles/demand", { params });
-  return data;
-}
-
-export async function fetchAlerts(alertDate?: string, entityType?: "role" | "skill") {
-  const params: Record<string, string> = {};
-  if (alertDate) params.alert_date = alertDate;
-  if (entityType) params.entity_type = entityType;
-  const { data } = await api.get<{ data: MarketAlert[]; alert_date: string }>("/api/alerts", { params });
   return data;
 }
 

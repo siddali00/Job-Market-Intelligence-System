@@ -3,7 +3,6 @@ import {
   LayoutDashboard,
   TrendingUp,
   DollarSign,
-  Bell,
   Brain,
 } from "lucide-react";
 import clsx from "clsx";
@@ -17,7 +16,6 @@ const navItems: {
   { to: "/", label: "Overview", icon: LayoutDashboard, end: true },
   { to: "/skills", label: "Skills", icon: TrendingUp },
   { to: "/salaries", label: "Salaries", icon: DollarSign },
-  { to: "/alerts", label: "Alerts", icon: Bell },
   { to: "/predictions", label: "Predict", icon: Brain },
 ];
 

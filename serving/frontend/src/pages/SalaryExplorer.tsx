@@ -14,8 +14,10 @@ import { fetchSalaries, type SalarySummary } from "../api/client";
 import MetricCard from "../components/MetricCard";
 import { FilterBar, FilterInput, FilterSelect } from "../components/FilterBar";
 
+const DEFAULT_COUNTRY = "US";
+
 const COUNTRY_OPTIONS = [
-  { value: "", label: "All countries" },
+  { value: "all", label: "All countries" },
   { value: "US", label: "United States" },
   { value: "GB", label: "United Kingdom" },
   { value: "CA", label: "Canada" },
@@ -24,21 +26,23 @@ const COUNTRY_OPTIONS = [
   { value: "IN", label: "India" },
 ];
 
-const SORT_OPTIONS = [
-  { value: "median", label: "Median (high first)" },
-  { value: "sample", label: "Sample size" },
-  { value: "role", label: "Role A–Z" },
-];
-
 const fmt = (n: number | null) =>
   n != null ? `$${Math.round(n).toLocaleString()}` : "—";
+
+/** Matches gold-layer salary_summary (HAVING COUNT(*) >= 3); client-side filter kept for clarity. */
+const MIN_SAMPLE = 3;
+
+/** Vertical bar chart: pixels per row + axis padding (scrolls when tall). */
+const CHART_PX_PER_ROW = 26;
+const CHART_MIN_HEIGHT = 260;
+const CHART_MAX_HEIGHT = 3600;
 
 export default function SalaryExplorer() {
   const [searchParams, setSearchParams] = useSearchParams();
   const roleFilter = searchParams.get("q") ?? "";
-  const countryFilter = searchParams.get("country") ?? "";
-  const minSample = searchParams.get("min_n") ?? "3";
-  const sortBy = searchParams.get("sort") ?? "median";
+  const countryRaw = searchParams.get("country");
+  const countryFilter =
+    countryRaw === null || countryRaw === "" ? DEFAULT_COUNTRY : countryRaw;
 
   const setParam = (key: string, value: string) => {
     setSearchParams(
@@ -58,7 +62,10 @@ export default function SalaryExplorer() {
 
   useEffect(() => {
     setLoading(true);
-    fetchSalaries(roleFilter || undefined, countryFilter || undefined)
+    fetchSalaries(
+      roleFilter || undefined,
+      countryFilter === "all" ? undefined : countryFilter
+    )
       .then((d) => {
         setSalaries(d.data);
         setError(null);
@@ -67,42 +74,40 @@ export default function SalaryExplorer() {
       .finally(() => setLoading(false));
   }, [roleFilter, countryFilter]);
 
-  const minN = Math.max(1, parseInt(minSample, 10) || 3);
-
   const processed = useMemo(() => {
-    let rows = salaries.filter((r) => r.sample_size >= minN);
-    if (sortBy === "median") {
-      rows = [...rows].sort((a, b) => (b.salary_median ?? 0) - (a.salary_median ?? 0));
-    } else if (sortBy === "sample") {
-      rows = [...rows].sort((a, b) => b.sample_size - a.sample_size);
-    } else {
-      rows = [...rows].sort((a, b) => a.role.localeCompare(b.role));
-    }
+    let rows = salaries.filter((r) => r.sample_size >= MIN_SAMPLE);
+    rows = [...rows].sort((a, b) => (b.salary_median ?? 0) - (a.salary_median ?? 0));
     return rows;
-  }, [salaries, minN, sortBy]);
+  }, [salaries]);
 
   const topMedian = processed.reduce(
     (best, row) => (row.salary_median ?? 0) > (best?.salary_median ?? 0) ? row : best,
     processed[0]
   );
 
-  const chartData = processed
-    .filter((r) => r.salary_median != null)
-    .slice(0, 12)
-    .map((r) => ({
-      name: `${r.role} (${r.country})`,
-      p25: r.salary_p25 ?? 0,
-      median: r.salary_median ?? 0,
-      p75: r.salary_p75 ?? 0,
-    }));
+  const chartRows = processed.filter((r) => r.salary_median != null);
+
+  const chartLabel = (r: SalarySummary) =>
+    countryFilter === "all" ? `${r.role} (${r.country})` : r.role;
+
+  const chartData = chartRows.map((r) => ({
+    name: chartLabel(r),
+    p25: r.salary_p25 ?? 0,
+    median: r.salary_median ?? 0,
+    p75: r.salary_p75 ?? 0,
+  }));
+
+  const chartHeight = Math.min(
+    CHART_MAX_HEIGHT,
+    Math.max(CHART_MIN_HEIGHT, chartData.length * CHART_PX_PER_ROW + 72)
+  );
 
   return (
     <div>
       <p className="text-[10px] font-semibold uppercase tracking-wider text-sky-500/90"> Compensation </p>
       <h1 className="mb-0.5 text-lg font-semibold text-slate-100">Salary explorer</h1>
       <p className="mb-3 text-xs text-slate-500">
-        Filter roles and countries, set a minimum sample for reliability, and sort to match how you compare
-        offers.
+        Filter by role and country to compare compensation bands.
       </p>
 
       {error && (
@@ -124,28 +129,10 @@ export default function SalaryExplorer() {
           options={COUNTRY_OPTIONS}
           onChange={(v) => setParam("country", v)}
         />
-        <FilterSelect
-          label="Min n"
-          value={minSample}
-          options={[
-            { value: "1", label: "n ≥ 1" },
-            { value: "3", label: "n ≥ 3" },
-            { value: "5", label: "n ≥ 5" },
-            { value: "10", label: "n ≥ 10" },
-            { value: "20", label: "n ≥ 20" },
-          ]}
-          onChange={(v) => setParam("min_n", v)}
-        />
-        <FilterSelect
-          label="Sort"
-          value={sortBy}
-          options={SORT_OPTIONS}
-          onChange={(v) => setParam("sort", v)}
-        />
       </FilterBar>
 
       <div className="mb-3 grid grid-cols-2 gap-1.5 sm:grid-cols-4">
-        <MetricCard size="sm" label="Rows (after n)" value={processed.length} />
+        <MetricCard size="sm" label="Rows" value={processed.length} />
         <MetricCard
           size="sm"
           label="Top median"
@@ -167,7 +154,7 @@ export default function SalaryExplorer() {
 
       <div className="mb-3 rounded-lg border border-slate-800/80 bg-slate-900/30 p-3">
         <h2 className="mb-2 text-[11px] font-semibold uppercase tracking-wider text-slate-500">
-          Median by role × country (top 12, filtered)
+          Median by role × country — all rows matching filters
         </h2>
         {loading ? (
           <div className="flex h-72 items-center justify-center text-sm text-slate-500">Loading…</div>
@@ -176,36 +163,38 @@ export default function SalaryExplorer() {
             No rows match your filters.
           </div>
         ) : (
-          <ResponsiveContainer width="100%" height={300}>
-            <BarChart data={chartData} layout="vertical">
-              <CartesianGrid strokeDasharray="3 3" stroke="#334155" horizontal={false} />
-              <XAxis
-                type="number"
-                tickFormatter={(v) => `$${(v / 1000).toFixed(0)}k`}
-                tick={{ fontSize: 10, fill: "#94a3b8" }}
-              />
-              <YAxis
-                dataKey="name"
-                type="category"
-                tick={{ fontSize: 9, fill: "#94a3b8" }}
-                width={150}
-              />
-              <Tooltip
-                formatter={(v: number) => fmt(v)}
-                contentStyle={{
-                  background: "#0f172a",
-                  border: "1px solid #334155",
-                  borderRadius: 6,
-                  fontSize: 11,
-                }}
-              />
-              <Bar dataKey="median" name="Median" radius={[0, 3, 3, 0]}>
-                {chartData.map((_, i) => (
-                  <Cell key={i} fill={i === 0 ? "#10b981" : "#0ea5e9"} />
-                ))}
-              </Bar>
-            </BarChart>
-          </ResponsiveContainer>
+          <div className="max-h-[min(85vh,720px)] overflow-y-auto pr-1">
+            <ResponsiveContainer width="100%" height={chartHeight}>
+              <BarChart data={chartData} layout="vertical" margin={{ left: 4, right: 8, top: 4, bottom: 4 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#334155" horizontal={false} />
+                <XAxis
+                  type="number"
+                  tickFormatter={(v) => `$${(v / 1000).toFixed(0)}k`}
+                  tick={{ fontSize: 10, fill: "#94a3b8" }}
+                />
+                <YAxis
+                  dataKey="name"
+                  type="category"
+                  tick={{ fontSize: 9, fill: "#94a3b8" }}
+                  width={countryFilter === "all" ? 168 : 140}
+                />
+                <Tooltip
+                  formatter={(v: number) => fmt(v)}
+                  contentStyle={{
+                    background: "#0f172a",
+                    border: "1px solid #334155",
+                    borderRadius: 6,
+                    fontSize: 11,
+                  }}
+                />
+                <Bar dataKey="median" name="Median" radius={[0, 3, 3, 0]}>
+                  {chartData.map((_, i) => (
+                    <Cell key={i} fill={i === 0 ? "#10b981" : "#0ea5e9"} />
+                  ))}
+                </Bar>
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
         )}
       </div>
 
