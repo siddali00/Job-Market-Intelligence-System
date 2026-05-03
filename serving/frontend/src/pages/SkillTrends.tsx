@@ -12,8 +12,9 @@ import {
   Bar,
 } from "recharts";
 import { fetchSkillsYearly, type SkillsYearlyResponse } from "../api/client";
-import MetricCard from "../components/MetricCard";
 import { FilterBar, FilterSelect } from "../components/FilterBar";
+
+const fmtSkill = (s: string) => s.toLowerCase();
 
 const COLORS = [
   "#0ea5e9",
@@ -55,18 +56,11 @@ export default function SkillTrends() {
 
   const chart = yearly?.chart ?? [];
   const skills = yearly?.skills ?? [];
-  const years = yearly?.years ?? [];
   const ranking = yearly?.ranking ?? [];
   const mode = yearly?.compare ?? compare;
 
   const barData = useMemo(
     () => ranking.map((r) => ({ skill: r.skill, total: r.total_jobs })),
-    [ranking]
-  );
-
-  const top = ranking[0];
-  const totalVolume = useMemo(
-    () => ranking.reduce((s, r) => s + r.total_jobs, 0),
     [ranking]
   );
 
@@ -76,8 +70,8 @@ export default function SkillTrends() {
 
   const chartTitle =
     mode === "all"
-      ? `Year-over-year (each skill, ${skills.length} lines)`
-      : "Year-over-year (top 10 skills)";
+      ? `Skill Trends (YoY)`
+      : "Skill Trends (Top 10, YoY)";
 
   const barTitle =
     mode === "all" ? "All-time totals (every skill)" : "All-time totals (top 10 skills)";
@@ -86,12 +80,6 @@ export default function SkillTrends() {
     <div>
       <p className="text-[10px] font-semibold uppercase tracking-wider text-sky-500/90"> Demand </p>
       <h1 className="mb-0.5 text-lg font-semibold text-slate-100">Skill trends</h1>
-      <p className="mb-3 max-w-2xl text-xs leading-relaxed text-slate-500">
-        <strong className="text-slate-400">Top 10</strong>: one line per skill for the ten largest skills.{" "}
-        <strong className="text-slate-400">All skills</strong>: the same chart, but{" "}
-        <strong className="text-slate-400">one line for every skill</strong> in your index (legend scrolls;
-        hover a year to read values). Dense lines are drawn thinner so the chart stays readable.
-      </p>
 
       {error && (
         <div className="mb-4 rounded-lg border border-rose-800/50 bg-rose-950/30 px-3 py-2 text-xs text-rose-200">
@@ -108,32 +96,6 @@ export default function SkillTrends() {
         />
       </FilterBar>
 
-      <div className="mb-3 grid grid-cols-2 gap-1.5 sm:grid-cols-4">
-        <MetricCard
-          size="sm"
-          label="Years in index"
-          value={loading ? "…" : years.length}
-        />
-        <MetricCard
-          size="sm"
-          label="Lines on chart"
-          value={loading ? "…" : skills.length}
-        />
-        <MetricCard
-          size="sm"
-          label="Top skill (all-time)"
-          value={top?.skill ?? "—"}
-          subtitle={top ? `${top.total_jobs.toLocaleString()} job-days` : ""}
-          highlight
-        />
-        <MetricCard
-          size="sm"
-          label="Volume (all-time sum)"
-          value={loading ? "…" : totalVolume.toLocaleString()}
-          subtitle="Σ job-days"
-        />
-      </div>
-
       <div className="mb-3 rounded-lg border border-slate-800/80 bg-slate-900/30 p-3">
         <h2 className="mb-2 text-[11px] font-semibold uppercase tracking-wider text-slate-500">
           {chartTitle}
@@ -143,7 +105,7 @@ export default function SkillTrends() {
         ) : chart.length === 0 ? (
           <div className="flex flex-col items-center justify-center gap-1 px-4 py-12 text-center text-sm text-slate-500">
             <span>No yearly data yet.</span>
-            <span className="text-xs text-slate-600">Run the pipeline to populate daily_skill_demand.</span>
+            <span className="text-xs text-slate-400">Run the pipeline to populate daily_skill_demand.</span>
           </div>
         ) : (
           <ResponsiveContainer width="100%" height={mode === "all" ? 340 : 300}>
@@ -166,6 +128,8 @@ export default function SkillTrends() {
                   maxHeight: 280,
                   overflowY: "auto",
                 }}
+                labelStyle={{ color: "#e2e8f0" }}
+                itemStyle={{ color: "#e2e8f0" }}
               />
               <Legend
                 layout="vertical"
@@ -184,7 +148,7 @@ export default function SkillTrends() {
                   key={skill}
                   type="monotone"
                   dataKey={skill}
-                  name={skill}
+                  name={fmtSkill(skill)}
                   stroke={COLORS[i % COLORS.length]}
                   dot={showDots ? { r: 2 } : false}
                   strokeWidth={lineStroke}
@@ -216,6 +180,7 @@ export default function SkillTrends() {
                 <YAxis
                   dataKey="skill"
                   type="category"
+                  tickFormatter={fmtSkill}
                   tick={{ fontSize: mode === "all" ? 8 : 9, fill: "#94a3b8" }}
                   width={mode === "all" ? 100 : 110}
                 />
@@ -226,22 +191,24 @@ export default function SkillTrends() {
                     borderRadius: 6,
                     fontSize: 11,
                   }}
-                  formatter={(v: number) => [v.toLocaleString(), "job-days"]}
+                  labelStyle={{ color: "#e2e8f0" }}
+                  itemStyle={{ color: "#e2e8f0" }}
+                  formatter={(v: number) => [v.toLocaleString(), "postings"]}
                 />
-                <Bar dataKey="total" fill="#0ea5e9" radius={[0, 3, 3, 0]} name="All-time job-days" />
+                <Bar dataKey="total" fill="#0ea5e9" radius={[0, 3, 3, 0]} name="Total postings" />
               </BarChart>
             </ResponsiveContainer>
           </div>
         )}
         {mode === "all" && barData.length > 0 && (
-          <p className="mt-2 text-center text-[10px] text-slate-600">
+          <p className="mt-2 text-center text-[10px] text-slate-400">
             {barData.length} skills — scroll the chart if needed
           </p>
         )}
       </div>
 
       {yearly?.data_freshness && (
-        <p className="mt-2 text-center text-[10px] text-slate-600">
+        <p className="mt-2 text-center text-[10px] text-slate-400">
           API: {new Date(yearly.data_freshness).toLocaleString()}
         </p>
       )}
