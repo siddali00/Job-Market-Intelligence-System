@@ -242,6 +242,10 @@ def _make_bronze_schema():
         StructField("remote",                 B, True),
         StructField("skills_extracted",       A, True),
         StructField("posted_at",              S, True),
+        StructField("date_posted",            S, True),
+        StructField("job_posted_date",        S, True),
+        StructField("date_time",              S, True),
+        StructField("first_seen",             S, True),
         # Adzuna extras
         StructField("category",               S, True),
         StructField("source_url",             S, True),
@@ -269,6 +273,14 @@ def _spark_clean(df, F):
     """Apply all cleaning transforms on the Spark DataFrame."""
     return (
         df
+        # Coalesce all Kaggle date variants into posted_at
+        .withColumn("posted_at", F.coalesce(
+            F.col("posted_at"), 
+            F.col("date_posted"), 
+            F.col("job_posted_date"), 
+            F.col("date_time"), 
+            F.col("first_seen")
+        ))
         # String trimming
         .withColumn("title",       F.trim(F.coalesce(F.col("title"),       F.lit(""))))
         .withColumn("company",     F.trim(F.coalesce(F.col("company"),     F.lit(""))))
