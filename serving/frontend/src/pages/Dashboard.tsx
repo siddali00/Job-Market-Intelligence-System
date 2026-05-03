@@ -1,13 +1,6 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
-import {
-  ArrowRight,
-  Brain,
-  Briefcase,
-  Globe2,
-  LineChart,
-  Sparkles,
-} from "lucide-react";
+import { ArrowRight } from "lucide-react";
 import {
   fetchCooccurrence,
   fetchOverviewMetrics,
@@ -106,17 +99,18 @@ export default function Dashboard() {
       <header className="space-y-1.5">
         <div className="flex flex-wrap items-end justify-between gap-2">
           <div>
-            <p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-sky-500/90">
-              Your snapshot
-            </p>
             <h1 className="text-lg font-semibold text-slate-100 tracking-tight sm:text-xl">
-              Job market intelligence
+              Overview
             </h1>
             <p className="text-xs text-slate-500 max-w-2xl leading-snug">
-              Explore demand, pay, and remote mix in one place. Adjust the window and open a section for
-              detail.
+              Demand, pay, and remote mix across the index.
             </p>
           </div>
+          {metrics?.data_freshness && (
+            <span className="text-[11px] text-slate-500 shrink-0">
+              API: {new Date(metrics.data_freshness).toLocaleString()}
+            </span>
+          )}
         </div>
         <DateRangeToolbar
           start={start}
@@ -139,25 +133,25 @@ export default function Dashboard() {
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-1.5">
         <MetricCard
           size="sm"
-          label="Postings in window"
+          label="Postings"
           value={loading ? "…" : (metrics?.jobs_in_window ?? 0).toLocaleString()}
-          subtitle="Indexed in range"
+          subtitle="In selected window"
         />
         <MetricCard
           size="sm"
-          label="Index coverage"
+          label="Total indexed"
           value={loading ? "…" : (metrics?.jobs_total ?? 0).toLocaleString()}
           subtitle="All-time in DB"
         />
         <MetricCard
           size="sm"
-          label="Remote share"
+          label="Remote mix"
           value={loading || remotePct == null ? (loading ? "…" : "—") : `${remotePct}%`}
-          subtitle="Of remote+onsite"
+          subtitle="Of remote + onsite"
         />
         <MetricCard
           size="sm"
-          label="Salary bands"
+          label="Pay bands"
           value={loading ? "…" : (metrics?.salary_summary_rows ?? 0).toLocaleString()}
           subtitle={`${metrics?.distinct_countries_salary ?? 0} countries`}
         />
@@ -171,7 +165,6 @@ export default function Dashboard() {
                 ? metrics.demand_date_range.max
                 : "—"
           }
-          subtitle="Gold demand"
           highlight
         />
       </div>
@@ -205,7 +198,7 @@ export default function Dashboard() {
                   {trending.slice(0, 10).map((r, i) => (
                     <tr key={r.skill} className="border-t border-slate-800/50 text-slate-200">
                       <td className="px-1 py-0.5 text-slate-500">{i + 1}</td>
-                      <td className="px-1 py-0.5 font-medium text-slate-100">{r.skill}</td>
+                      <td className="px-1 py-0.5 font-medium text-slate-100">{r.skill.toLowerCase()}</td>
                       <td className="px-1 py-0.5 text-right text-slate-300">{r.total_jobs}</td>
                       <td className="px-1 py-0.5 text-right text-sky-300/90">
                         {r.peak_7d_avg != null ? r.peak_7d_avg.toFixed(1) : "—"}
@@ -287,9 +280,9 @@ export default function Dashboard() {
                   className="flex items-center justify-between gap-1 text-[10px] text-slate-300 border-b border-slate-800/30 last:border-0 py-0.5"
                 >
                   <span className="min-w-0 truncate">
-                    <span className="text-slate-200">{c.skill_a}</span>
-                    <span className="text-slate-600"> + </span>
-                    <span className="text-slate-200">{c.skill_b}</span>
+                    <span className="text-slate-200">{c.skill_a.toLowerCase()}</span>
+                    <span className="text-slate-400"> + </span>
+                    <span className="text-slate-200">{c.skill_b.toLowerCase()}</span>
                   </span>
                   <span className="text-slate-500 tabular-nums shrink-0">{c.co_count}</span>
                 </li>
@@ -299,46 +292,6 @@ export default function Dashboard() {
         </Panel>
       </div>
 
-      <div className="rounded-lg border border-slate-800/80 bg-slate-900/20 p-3">
-          <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-500 mb-2">
-            Quick tools
-          </p>
-          <div className="grid grid-cols-2 gap-1.5 sm:grid-cols-3">
-            <Link
-              to={skillsLink}
-              className="flex items-center gap-1.5 rounded border border-slate-800/80 bg-slate-900/50 px-2 py-1.5 text-[11px] text-slate-200 hover:border-sky-700/50 hover:bg-slate-800/50"
-            >
-              <LineChart className="h-3.5 w-3.5 text-sky-500 shrink-0" />
-              Skill trends
-            </Link>
-            <Link
-              to="/salaries"
-              className="flex items-center gap-1.5 rounded border border-slate-800/80 bg-slate-900/50 px-2 py-1.5 text-[11px] text-slate-200 hover:border-sky-700/50 hover:bg-slate-800/50"
-            >
-              <Briefcase className="h-3.5 w-3.5 text-emerald-500 shrink-0" />
-              Salaries
-            </Link>
-            <Link
-              to="/predictions"
-              className="flex items-center gap-1.5 rounded border border-slate-800/80 bg-slate-900/50 px-2 py-1.5 text-[11px] text-slate-200 hover:border-sky-700/50 hover:bg-slate-800/50"
-            >
-              <Brain className="h-3.5 w-3.5 text-violet-400 shrink-0" />
-              Predict
-            </Link>
-            <div className="col-span-2 sm:col-span-1 flex items-center gap-1.5 rounded border border-slate-800/40 bg-slate-950/30 px-2 py-1.5 text-[10px] text-slate-500">
-              <Globe2 className="h-3.5 w-3.5 shrink-0" />
-              {metrics ? `${metrics.distinct_skills} skills · ${metrics.distinct_roles} roles` : "…"}
-            </div>
-            <div className="flex items-center gap-1.5 rounded border border-slate-800/40 bg-slate-950/30 px-2 py-1.5 text-[10px] text-slate-500">
-              <Sparkles className="h-3.5 w-3.5 text-slate-600 shrink-0" />
-              <span className="truncate">
-                {metrics?.data_freshness
-                  ? `Refreshed ${new Date(metrics.data_freshness).toLocaleString()}`
-                  : "—"}
-              </span>
-            </div>
-          </div>
-      </div>
     </div>
   );
 }

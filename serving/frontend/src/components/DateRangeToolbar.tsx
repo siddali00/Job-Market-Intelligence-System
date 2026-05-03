@@ -70,7 +70,7 @@ export default function DateRangeToolbar({
           onChange={(e) => onStartChange(e.target.value)}
           className="rounded border border-slate-700/90 bg-slate-950/80 px-1.5 py-0.5 text-[11px] text-slate-200 focus:outline-none focus:ring-1 focus:ring-sky-500/60"
         />
-        <span className="text-slate-600 text-[10px]">→</span>
+        <span className="text-slate-400 text-[10px]">→</span>
         <label className="sr-only">To</label>
         <input
           type="date"

@@ -104,11 +104,8 @@ export default function SalaryExplorer() {
 
   return (
     <div>
-      <p className="text-[10px] font-semibold uppercase tracking-wider text-sky-500/90"> Compensation </p>
+      <p className="text-[10px] font-semibold uppercase tracking-wider text-sky-500/90">Salaries</p>
       <h1 className="mb-0.5 text-lg font-semibold text-slate-100">Salary explorer</h1>
-      <p className="mb-3 text-xs text-slate-500">
-        Filter by role and country to compare compensation bands.
-      </p>
 
       {error && (
         <div className="mb-4 rounded-lg border border-rose-800/50 bg-rose-950/30 px-3 py-2 text-xs text-rose-200">
@@ -153,9 +150,12 @@ export default function SalaryExplorer() {
       </div>
 
       <div className="mb-3 rounded-lg border border-slate-800/80 bg-slate-900/30 p-3">
-        <h2 className="mb-2 text-[11px] font-semibold uppercase tracking-wider text-slate-500">
-          Median by role × country — all rows matching filters
-        </h2>
+        <div className="mb-2 flex items-baseline justify-between gap-2">
+          <h2 className="text-[11px] font-semibold uppercase tracking-wider text-slate-500">
+            Median by role × country
+          </h2>
+          <span className="text-[10px] text-slate-400">Values in USD as reported by source APIs</span>
+        </div>
         {loading ? (
           <div className="flex h-72 items-center justify-center text-sm text-slate-500">Loading…</div>
         ) : chartData.length === 0 ? (
@@ -186,6 +186,8 @@ export default function SalaryExplorer() {
                     borderRadius: 6,
                     fontSize: 11,
                   }}
+                  labelStyle={{ color: "#e2e8f0" }}
+                  itemStyle={{ color: "#e2e8f0" }}
                 />
                 <Bar dataKey="median" name="Median" radius={[0, 3, 3, 0]}>
                   {chartData.map((_, i) => (

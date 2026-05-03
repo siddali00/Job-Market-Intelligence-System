@@ -72,10 +72,8 @@ export default function Predictions() {
 
   return (
     <div className="max-w-2xl">
-      <p className="text-[10px] font-semibold uppercase tracking-wider text-sky-500/90"> What-if </p>
-      <h1 className="mb-0.5 text-lg font-semibold text-slate-100">Salary prediction</h1>
-      <p className="mb-4 text-xs text-slate-500">
-      </p>
+      <p className="text-[10px] font-semibold uppercase tracking-wider text-sky-500/90">Estimator</p>
+      <h1 className="mb-4 text-lg font-semibold text-slate-100">Salary prediction</h1>
 
       {optionsError && (
         <div className="mb-4 rounded-lg border border-red-800/80 bg-red-950/30 px-3 py-2 text-sm text-red-300">

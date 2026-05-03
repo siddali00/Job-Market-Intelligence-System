@@ -35,9 +35,9 @@ export default function Navbar() {
               <span className="block truncate text-xs font-semibold tracking-tight sm:text-sm">
                 Job Market Intelligence
               </span>
-              <span className="hidden text-[10px] text-slate-500 sm:block">
+              {/* <span className="hidden text-[10px] text-slate-500 sm:block">
                 Workforce analytics
-              </span>
+              </span> */}
             </div>
           </NavLink>
           <nav className="flex flex-wrap justify-end gap-0.5 sm:gap-1">

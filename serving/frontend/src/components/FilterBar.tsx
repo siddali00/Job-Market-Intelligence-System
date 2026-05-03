@@ -55,7 +55,7 @@ export function FilterInput({ label, value, placeholder, onChange }: FilterInput
         value={value}
         placeholder={placeholder}
         onChange={(e) => onChange(e.target.value)}
-        className="w-36 rounded-md border border-slate-700/90 bg-slate-950/60 px-2 py-1 text-sm text-slate-100 placeholder:text-slate-600 focus:outline-none focus:ring-1 focus:ring-sky-500/50"
+        className="w-36 rounded-md border border-slate-700/90 bg-slate-950/60 px-2 py-1 text-sm text-slate-100 placeholder:text-slate-400 focus:outline-none focus:ring-1 focus:ring-sky-500/50"
       />
     </div>
   );
