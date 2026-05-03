@@ -524,6 +524,10 @@ def _write_records(
                     except Exception as exc:
                         savepoint.rollback()        # ROLLBACK TO SAVEPOINT — chunk tx intact
                         errors += 1
+                        logger.exception(
+                            "silver_row_failed",
+                            extra={"record_id": str(raw.get("external_id", ""))[:250], "source": raw.get("source")}
+                        )
                         # Log the error in its own savepoint so it persists
                         try:
                             err_sp = db.begin_nested()
@@ -567,9 +571,13 @@ def _upsert_job(
     if not skip_hash_lookup and db.query(Job).filter(Job.raw_hash == raw_hash).first():
         return "skipped"
 
-    title        = (raw.get("title")   or "").strip()
-    company_name = (raw.get("company") or "").strip()
+    title        = _clean_text(raw.get("title"), 512) or ""
+    company_name = _clean_text(raw.get("company"), 255) or ""
     source       = raw.get("source", "unknown")
+
+    external_id = _clean_text(raw.get("external_id"), 255)
+    if external_id is None:
+        external_id = raw_hash[:32]   # only if your schema requires a non-null external_id
 
     salary_min = _to_float(raw.get("salary_min"))
     salary_max = _to_float(raw.get("salary_max"))
@@ -601,7 +609,7 @@ def _upsert_job(
 
     job = Job(
         source           = source,
-        external_id      = _trunc(raw.get("external_id") or "", 255),
+        external_id      = external_id,
         raw_hash         = raw_hash,
         run_id           = run_id,
         title            = _trunc(title, 512),
