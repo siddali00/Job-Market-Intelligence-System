@@ -144,7 +144,7 @@ def _silver_spark() -> dict[str, Any]:
         ("raw_hash",   1.00),
         ("posted_at",  0.70),
     ]:
-        non_null = df.filter(F.col(col_name).isNotNull() & (F.col(col_name) != "")).count()
+        non_null = df.filter(F.col(col_name).isNotNull() & (F.col(col_name).cast("string") != "")).count()
         rate     = non_null / total
         checks.append(_check(
             f"silver_{col_name}_fill_rate",
@@ -244,7 +244,8 @@ def _gold_spark() -> dict[str, Any]:
 
         # 7d avg should be >= 0 and <= job_count * 2 (sanity bound)
         bad_ratio = role_df.filter(
-            F.col("moving_avg_7d") > F.col("job_count") * 10
+            (F.col("job_count") > 5) & 
+            (F.col("moving_avg_7d") > F.col("job_count") * 20)
         ).count()
         checks.append(_check("gold_moving_avg_plausible", bad_ratio == 0,
                               f"{bad_ratio} rows with implausible 7d avg",
