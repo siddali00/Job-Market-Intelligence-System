@@ -346,8 +346,8 @@ def _get_spark_session():
         SparkSession.builder
         .appName("JobMarketIntelligence-BronzeToSilver")
         .master("local[2]")  # Use only 2 cores (not all) to limit memory
-        .config("spark.driver.memory",           "512m")  # Reduced from 4g (was too aggressive)
-        .config("spark.executor.memory",         "256m")  # Limit executor memory
+        .config("spark.driver.memory",           "1g")  # Reduced from 4g (was too aggressive)
+        .config("spark.executor.memory",         "512m")  # Limit executor memory
         .config("spark.sql.shuffle.partitions",  "4")     # Reduced from 8
         .config("spark.ui.showConsoleProgress",  "false")
         .config("spark.pyspark.python",           py_exe)
