@@ -15,6 +15,7 @@ import time
 from datetime import date
 from pathlib import Path
 from typing import Any
+import datetime
 
 import httpx
 from monitoring.logger import get_logger
@@ -154,7 +155,9 @@ class BaseIngester(abc.ABC):
         if subfolder:
             directory = directory / subfolder
         directory.mkdir(parents=True, exist_ok=True)
-        file_path = directory / f"batch_{page:04d}.json"
+        timestamp = datetime.utcnow().strftime("%H%M%S")
+        # file_path = directory / f"batch_{page:04d}.json"
+        file_path = directory / f"batch_{page:04d}_{timestamp}.json"
         with open(file_path, "w", encoding="utf-8") as f:
             json.dump(records, f, ensure_ascii=False, default=str)
         logger.info(
