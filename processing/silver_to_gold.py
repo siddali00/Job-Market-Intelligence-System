@@ -98,6 +98,14 @@ def _run_sql(run_date: str) -> dict[str, Any]:
         _demand_rows_to_payload(skill_rows, "skill")
     )
 
+    # Perform TRUNCATE right before generating the new salary_summary
+    db_trunc = SessionLocal()
+    try:
+        db_trunc.execute(text("TRUNCATE TABLE salary_summary;"))
+        db_trunc.commit()
+    finally:
+        db_trunc.close()
+
     raw = _fetch_sql("""
         SELECT COALESCE(title_normalized, 'Other') AS role,
                COALESCE(country, 'UNKNOWN') AS country,
@@ -113,6 +121,7 @@ def _run_sql(run_date: str) -> dict[str, Any]:
         FROM jobs
         WHERE salary_min IS NOT NULL AND salary_max IS NOT NULL
           AND salary_min > 0 AND salary_max >= salary_min
+          AND salary_currency = 'USD'
         GROUP BY 1, 2
         HAVING COUNT(*) >= 3
     """)

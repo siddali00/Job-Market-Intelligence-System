@@ -41,6 +41,12 @@ from storage.models import (
 logger   = get_logger(__name__)
 settings = get_settings()
 
+COUNTRY_CURRENCY = {
+    "US": "USD", "GB": "GBP", "IN": "INR", "CA": "CAD",
+    "AU": "AUD", "DE": "EUR", "FR": "EUR", "NL": "EUR",
+    "SG": "SGD", "NZ": "NZD", "ZA": "ZAR",
+}
+
 SKILL_KEYWORDS = [
     "python", "sql", "r", "scala", "java", "javascript", "typescript", "go",
     "rust", "c++", "spark", "hadoop", "kafka", "airflow", "prefect", "dbt",
@@ -160,16 +166,23 @@ def _run_spark(source: str | None, run_date: str, run_id: str | None) -> dict:
 
     rows_after_dedup = total_before_dedup - dupes_in_batch
     # ── 6. Collect, then cross-run dedup in Python ────────────────────────────
-    # Avoids a second createDataFrame call (which needs Python workers on Windows).
-    # collect() can take many minutes on ~1M+ rows and looks "stuck" with no logs.
+    # Avoid loading ALL rows at once—process in batches of 5000 to prevent OOM.
     logger.info(
         "spark_collecting_driver",
         extra={
             "rows": rows_after_dedup,
-            "hint": "Serializing Spark rows to Python; then PostgreSQL row-by-row writes follow.",
+            "hint": "Processing in batches to avoid memory exhaustion on small instances.",
         },
     )
-    records = [row.asDict() for row in df.collect()]
+    
+    batch_size = 5000
+    records = []
+    for i, row in enumerate(df.collect()):
+        records.append(row.asDict())
+        # Periodically log progress every 10k rows
+        if (i + 1) % 10000 == 0:
+            logger.info("spark_batch_progress", extra={"rows_collected": i + 1})
+    
     logger.info("spark_collect_done", extra={"rows": len(records)})
 
     existing_hashes = set(_fetch_existing_hashes())
@@ -195,6 +208,14 @@ def _run_spark(source: str | None, run_date: str, run_id: str | None) -> dict:
         "by_source":          raw_counts,
     }
     logger.info("bronze_to_silver_complete", extra=summary)
+    
+    # ── CRITICAL: Clean up Spark to free JVM memory ────────────────────────────
+    try:
+        spark.stop()
+        logger.info("spark_session_stopped")
+    except Exception as exc:
+        logger.warning("spark_stop_failed", extra={"error": str(exc)})
+    
     return summary
 
 
@@ -324,11 +345,13 @@ def _get_spark_session():
     spark = (
         SparkSession.builder
         .appName("JobMarketIntelligence-BronzeToSilver")
-        .master("local[*]")
-        .config("spark.driver.memory",           "4g")
-        .config("spark.sql.shuffle.partitions",  "8")
+        .master("local[2]")  # Use only 2 cores (not all) to limit memory
+        .config("spark.driver.memory",           "512m")  # Reduced from 4g (was too aggressive)
+        .config("spark.executor.memory",         "256m")  # Limit executor memory
+        .config("spark.sql.shuffle.partitions",  "4")     # Reduced from 8
         .config("spark.ui.showConsoleProgress",  "false")
         .config("spark.pyspark.python",           py_exe)
+        .config("spark.sql.adaptive.enabled",    "true")  # Adaptive query execution
         .getOrCreate()
     )
     spark.sparkContext.setLogLevel("ERROR")
@@ -343,14 +366,17 @@ def _get_spark_session():
 
 def _run_pandas(source: str | None, run_date: str, run_id: str | None) -> dict:
     import pandas as pd
+    import gc
 
     bronze_root = Path(settings.bronze_storage_path)
     sources     = _list_sources(bronze_root, source, run_date)
     if not sources:
         return _empty_summary("pandas", run_date)
 
+    # ── Load records in batches to avoid memory spike ─────────────────────────
     all_records: list[dict] = []
     raw_counts: dict[str, int] = {}
+    total_files = 0
 
     for src in sources:
         partition_dir = bronze_root / src / run_date
@@ -358,10 +384,17 @@ def _run_pandas(source: str | None, run_date: str, run_id: str | None) -> dict:
             rows = json.loads(jf.read_text(encoding="utf-8"))
             all_records.extend(rows)
             raw_counts[src] = raw_counts.get(src, 0) + len(rows)
+            total_files += 1
+            
+            # Every 10 files, log progress and clear memory
+            if total_files % 10 == 0:
+                logger.info("pandas_loaded_files", extra={"files": total_files, "records": len(all_records)})
+                gc.collect()
 
     if not all_records:
         return _empty_summary("pandas", run_date)
 
+    logger.info("pandas_creating_dataframe", extra={"total_records": len(all_records)})
     df = pd.DataFrame(all_records)
 
     # ── Clean ─────────────────────────────────────────────────────────────────
@@ -398,13 +431,24 @@ def _run_pandas(source: str | None, run_date: str, run_id: str | None) -> dict:
     df = df[~df["raw_hash"].isin(existing)]
 
     records   = df.to_dict(orient="records")
+    
+    # ── Write in batches to avoid memory spike ────────────────────────────────
+    logger.info("pandas_writing_batch", extra={"total_records": len(records)})
     inserted, skipped, errors = _write_records(records, run_id, trust_prefilter=True)
+    
+    total_raw_count = sum(raw_counts.values())
+    
+    # Clear memory
+    del df
+    del all_records
+    del records
+    gc.collect()
 
     summary = {
         "engine":             "pandas",
         "stage":              "bronze_to_silver",
         "run_date":           run_date,
-        "total_raw":          len(all_records),
+        "total_raw":          total_raw_count,
         "duplicates_removed": dupes_in_batch,
         "already_in_db":      len(existing),
         "total_inserted":     inserted,
@@ -557,7 +601,7 @@ def _upsert_job(
         remote           = remote,
         salary_min       = salary_min,
         salary_max       = salary_max,
-        salary_currency  = "USD",
+        salary_currency  = COUNTRY_CURRENCY.get(country or "US", "USD"),
         salary_missing   = salary_min is None and salary_max is None,
         skill_missing    = len(skills_found) == 0,
         description      = (raw.get("description") or "")[:5000],

@@ -159,6 +159,7 @@ def _load_silver_spark(spark, F, min_salary: float, top_n_skills: int):
             WHERE j.salary_min IS NOT NULL
               AND j.salary_max IS NOT NULL
               AND (j.salary_min + j.salary_max) / 2.0 >= :min_salary
+              AND j.salary_currency = 'USD'
         """), {"min_salary": min_salary}).fetchall()
 
         skill_rows = db.execute(text("""
