@@ -23,6 +23,7 @@ from datetime import date, datetime, timezone
 
 from prefect import flow, task, get_run_logger
 from prefect.tasks import exponential_backoff
+from processing.bronze_to_silver import create_pipeline_run, update_pipeline_run
 
 
 # ── Ingestion tasks ───────────────────────────────────────────────────────────
@@ -185,10 +186,13 @@ def ingest_flow(run_id: str, adzuna_max_pages: int = 2) -> dict:
     description="Bronze → Silver (PySpark dedup + clean) → Gold + validation.",
     log_prints=True,
 )
-def transform_flow(run_id: str, run_date: str | None = None) -> dict:
+def transform_flow(run_id: str, run_date: str | None = None, ensure_run: bool = False) -> dict:
     logger   = get_run_logger()
     run_date = run_date or str(date.today())
     logger.info(f"transform_flow  run_id={run_id}  date={run_date}")
+
+    if ensure_run:
+        create_pipeline_run(run_id)
 
     b2s_result  = bronze_to_silver(run_id=run_id, run_date=run_date)
     silver_val  = validate_silver()
