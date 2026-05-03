@@ -16,14 +16,12 @@ Gold tables computed
   market_alerts        — spike detection: 7d_avg ≥ 2× 30d_avg
 """
 
-import json
-import os
 import re
 from datetime import date, datetime
 from functools import lru_cache
 from typing import Any
-from urllib.error import HTTPError, URLError
-from urllib.request import urlopen
+import requests
+import time
 
 from monitoring.logger import get_logger
 from sqlalchemy.dialects.postgresql import insert as pg_insert
@@ -32,19 +30,93 @@ from sqlalchemy import text
 
 logger = get_logger(__name__)
 
-# Approximate FX rates used to normalize salaries into USD.
-# Keep this mapping in sync with your preferred rate source.
-_CURRENCY_TO_USD = {
-    "USD": 1.0,
-    "GBP": 1.27,
-    "EUR": 1.08,
-    "CAD": 0.74,
-    "AUD": 0.66,
-    "NZD": 0.60,
-    "SGD": 0.74,
-    "INR": 0.012,
-    "ZAR": 0.055,
-}
+FX_API_URL = "https://v6.exchangerate-api.com/v6/{api_key}/latest/USD"
+FX_TIMEOUT = 5   # seconds
+FX_RETRIES = 3
+FX_RETRY_DELAY = 1  # seconds
+
+@lru_cache(maxsize=1)
+def get_usd_fx_rates():
+    import os
+
+    api_key = os.getenv("EXCHANGE_RATE_API_KEY")
+    if not api_key:
+        return _fallback_fx()
+
+    url = FX_API_URL.format(api_key=api_key)
+
+    for attempt in range(1, FX_RETRIES + 1):
+        try:
+            resp = requests.get(url, timeout=FX_TIMEOUT)
+            if resp.status_code != 200:
+                raise RuntimeError(f"Bad status {resp.status_code}")
+
+            data = resp.json()
+            rates = data.get("conversion_rates")
+            if not isinstance(rates, dict):
+                raise RuntimeError("Missing conversion_rates field")
+
+            cleaned = {}
+            for currency, rate in rates.items():
+                try:
+                    rate_f = float(rate)
+                except (TypeError, ValueError):
+                    continue
+                if rate_f > 0:
+                    cleaned[str(currency).upper()] = rate_f
+            return cleaned
+
+        except Exception as exc:
+            logger.warning(
+                "fx_fetch_failed",
+                extra={"attempt": attempt, "error": str(exc)}
+            )
+            time.sleep(FX_RETRY_DELAY)
+
+    logger.error("fx_api_unavailable_falling_back")
+    return _fallback_fx()
+
+
+def _fallback_fx():
+    """Static USD rates used when API is unreachable."""
+    return {
+        "USD": 1.0,
+        "EUR": 0.92,
+        "GBP": 0.79,
+        "CAD": 1.36,
+        "AUD": 1.51,
+        "INR": 83.0,
+        "SGD": 1.35,
+        "ZAR": 18.0,
+        "NZD": 1.64,
+        "CHF": 0.90
+    }
+
+def _build_fx_values_sql(rates: dict[str, float]) -> str:
+    """
+    Render a SQL VALUES clause from a currency -> USD-conversion-rate map.
+
+    The rate should mean:
+      1 unit of currency = rate USD-equivalent?  No.
+    Here we keep the same semantics as the existing query:
+      salary_in_currency / rate = salary_in_USD
+    so the rate must be "USD per 1 unit of currency" expressed as:
+      USD->currency conversion rate from the API, e.g. 1 USD = 0.92 EUR
+    """
+    rows = []
+    for currency, rate in sorted(rates.items()):
+        try:
+            rate_f = float(rate)
+        except (TypeError, ValueError):
+            continue
+        if rate_f > 0:
+            safe_currency = str(currency).upper().replace("'", "''")
+            rows.append(f"('{safe_currency}', {rate_f:.12f})")
+
+    if not rows:
+        rows.append("('USD', 1.0)")
+
+    return ", ".join(rows)
 
 # Window definitions match previous Spark: partition + order by calendar day,
 # 7- and 30-row trailing averages (inclusive).
@@ -117,47 +189,57 @@ def _run_sql(run_date: str) -> dict[str, Any]:
         _demand_rows_to_payload(skill_rows, "skill")
     )
 
-    # Perform TRUNCATE right before generating the new salary_summary
-    db_trunc = SessionLocal()
-    try:
-        db_trunc.execute(text("TRUNCATE TABLE salary_summary;"))
-        db_trunc.commit()
-    finally:
-        db_trunc.close()
+    # # Perform TRUNCATE right before generating the new salary_summary
+    # db_trunc = SessionLocal()
+    # try:
+    #     db_trunc.execute(text("TRUNCATE TABLE salary_summary;"))
+    #     db_trunc.commit()
+    # finally:
+    #     db_trunc.close()
 
-    fx_rates = _fetch_usd_rates()
-    fx_values_sql = _build_fx_values_sql(fx_rates)
+    fx = get_usd_fx_rates()
+    fx_values_sql = _build_fx_values_sql(fx)
+
     raw = _fetch_sql(f"""
         WITH fx(currency, rate_to_usd) AS (
             VALUES {fx_values_sql}
+        ),
+        normalized AS (
+            SELECT
+                COALESCE(j.title_normalized, 'Other') AS role,
+                COALESCE(j.country, 'UNKNOWN') AS country,
+                (((j.salary_min + j.salary_max) / 2.0) / fx.rate_to_usd)::numeric AS salary_usd
+            FROM jobs j
+            JOIN fx
+              ON fx.currency = UPPER(COALESCE(NULLIF(TRIM(j.salary_currency), ''), 'USD'))
+            WHERE j.salary_min IS NOT NULL
+              AND j.salary_max IS NOT NULL
+              AND j.salary_min > 0
+              AND j.salary_max >= j.salary_min
+              AND fx.rate_to_usd > 0
         )
-        SELECT COALESCE(j.title_normalized, 'Other') AS role,
-               COALESCE(j.country, 'UNKNOWN') AS country,
-               COUNT(*) AS sample_size,
-               ROUND(PERCENTILE_CONT(0.50) WITHIN GROUP (
-                   ORDER BY (((j.salary_min + j.salary_max) / 2.0) / fx.rate_to_usd)::numeric
-               )::numeric, 2) AS salary_median,
-               ROUND(PERCENTILE_CONT(0.25) WITHIN GROUP (
-                   ORDER BY (((j.salary_min + j.salary_max) / 2.0) / fx.rate_to_usd)::numeric
-               )::numeric, 2) AS salary_p25,
-               ROUND(PERCENTILE_CONT(0.75) WITHIN GROUP (
-                   ORDER BY (((j.salary_min + j.salary_max) / 2.0) / fx.rate_to_usd)::numeric
-               )::numeric, 2) AS salary_p75,
-               ROUND(PERCENTILE_CONT(0.90) WITHIN GROUP (
-                   ORDER BY (((j.salary_min + j.salary_max) / 2.0) / fx.rate_to_usd)::numeric
-               )::numeric, 2) AS salary_p90
-        FROM jobs j
-        JOIN fx ON fx.currency = COALESCE(j.salary_currency, 'USD')
-        WHERE j.salary_min IS NOT NULL AND j.salary_max IS NOT NULL
-          AND j.salary_min > 0 AND j.salary_max >= j.salary_min
-          AND fx.rate_to_usd > 0
+        SELECT
+            role,
+            country,
+            COUNT(*) AS sample_size,
+            ROUND(PERCENTILE_CONT(0.50) WITHIN GROUP (ORDER BY salary_usd), 2) AS salary_median,
+            ROUND(PERCENTILE_CONT(0.25) WITHIN GROUP (ORDER BY salary_usd), 2) AS salary_p25,
+            ROUND(PERCENTILE_CONT(0.75) WITHIN GROUP (ORDER BY salary_usd), 2) AS salary_p75,
+            ROUND(PERCENTILE_CONT(0.90) WITHIN GROUP (ORDER BY salary_usd), 2) AS salary_p90
+        FROM normalized
         GROUP BY 1, 2
         HAVING COUNT(*) >= 3
     """)
     results["salary_summary"] = _upsert_salary_summary([
-        {"role": r[0], "country": r[1], "sample_size": int(r[2]),
-         "salary_median": float(r[3]), "salary_p25": float(r[4]),
-         "salary_p75": float(r[5]), "salary_p90": float(r[6])}
+        {
+            "role": r[0],
+            "country": r[1],
+            "sample_size": int(r[2]),
+            "salary_median": float(r[3]),
+            "salary_p25": float(r[4]),
+            "salary_p75": float(r[5]),
+            "salary_p90": float(r[6]),
+        }
         for r in raw
     ])
 
@@ -268,49 +350,49 @@ def _assert_iso_date(s: str) -> str:
         raise ValueError(f"run_date must be YYYY-MM-DD, got {s!r}")
     return s
 
-@lru_cache(maxsize=4)
-def _fetch_usd_rates() -> dict[str, float]:
-    """Fetch live exchange rates and convert them into currency -> USD factors."""
-    api_key = os.getenv("EXCHANGE_RATE_API_KEY") or os.getenv("EXCHANGERATE_API_KEY")
-    if api_key:
-        url = f"https://v6.exchangerate-api.com/v6/{api_key}/latest/USD"
-    else:
-        url = "https://open.er-api.com/v6/latest/USD"
+# @lru_cache(maxsize=4)
+# def _fetch_usd_rates() -> dict[str, float]:
+#     """Fetch live exchange rates and convert them into currency -> USD factors."""
+#     api_key = os.getenv("EXCHANGE_RATE_API_KEY") or os.getenv("EXCHANGERATE_API_KEY")
+#     if api_key:
+#         url = f"https://v6.exchangerate-api.com/v6/{api_key}/latest/USD"
+#     else:
+#         url = "https://open.er-api.com/v6/latest/USD"
 
-    try:
-        with urlopen(url, timeout=20) as resp:
-            payload = json.loads(resp.read().decode("utf-8"))
-    except (HTTPError, URLError, TimeoutError, ValueError) as exc:
-        logger.warning("fx_rate_fetch_failed", extra={"error": str(exc), "url": url})
-        return {"USD": 1.0}
+#     try:
+#         with urlopen(url, timeout=20) as resp:
+#             payload = json.loads(resp.read().decode("utf-8"))
+#     except (HTTPError, URLError, TimeoutError, ValueError) as exc:
+#         logger.warning("fx_rate_fetch_failed", extra={"error": str(exc), "url": url})
+#         return {"USD": 1.0}
 
-    rates = payload.get("rates") if isinstance(payload, dict) else None
-    if not isinstance(rates, dict) or not rates.get("USD"):
-        logger.warning(
-            "fx_rate_payload_invalid",
-            extra={"url": url, "payload_keys": list(payload.keys()) if isinstance(payload, dict) else None},
-        )
-        return {"USD": 1.0}
+#     rates = payload.get("rates") if isinstance(payload, dict) else None
+#     if not isinstance(rates, dict) or not rates.get("USD"):
+#         logger.warning(
+#             "fx_rate_payload_invalid",
+#             extra={"url": url, "payload_keys": list(payload.keys()) if isinstance(payload, dict) else None},
+#         )
+#         return {"USD": 1.0}
 
-    usd_rates: dict[str, float] = {"USD": 1.0}
-    for currency, usd_per_usd in rates.items():
-        try:
-            rate = float(usd_per_usd)
-            if rate > 0:
-                usd_rates[str(currency).upper()] = 1.0 / rate
-        except (TypeError, ValueError):
-            continue
+#     usd_rates: dict[str, float] = {"USD": 1.0}
+#     for currency, usd_per_usd in rates.items():
+#         try:
+#             rate = float(usd_per_usd)
+#             if rate > 0:
+#                 usd_rates[str(currency).upper()] = 1.0 / rate
+#         except (TypeError, ValueError):
+#             continue
 
-    return usd_rates
+#     return usd_rates
 
 
-def _build_fx_values_sql(rates: dict[str, float]) -> str:
-    """Render a VALUES clause for a SQL fx CTE."""
-    rows = []
-    for currency, rate_to_usd in sorted(rates.items()):
-        safe_currency = currency.replace("'", "''")
-        rows.append(f"('{safe_currency}', {rate_to_usd:.12f})")
-    return ", ".join(rows)
+# def _build_fx_values_sql(rates: dict[str, float]) -> str:
+#     """Render a VALUES clause for a SQL fx CTE."""
+#     rows = []
+#     for currency, rate_to_usd in sorted(rates.items()):
+#         safe_currency = currency.replace("'", "''")
+#         rows.append(f"('{safe_currency}', {rate_to_usd:.12f})")
+#     return ", ".join(rows)
 
 
 # ── DB upsert helpers ─────────────────────────────────────────────────────────
