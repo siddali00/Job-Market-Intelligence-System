@@ -558,6 +558,11 @@ def _write_records(
 
     return inserted, skipped, errors
 
+def _clean_text(val, n: int) -> str | None:
+    if val is None:
+        return None
+    v = str(val).strip()
+    return v[:n] if v else None
 
 def _upsert_job(
     db,
