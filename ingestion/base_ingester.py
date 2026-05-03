@@ -150,7 +150,7 @@ class BaseIngester(abc.ABC):
                   ds_salaries/    batch_0001.json
                   ai_market_2025/ batch_0001.json
         """
-        timestamp = str(datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S"))
+        timestamp = str(datetime.now(timezone.utc).strftime("%Y-%m-%d_%H-%M-%S"))
         directory = Path(settings.bronze_storage_path) / self.source_name / timestamp
         if subfolder:
             directory = directory / subfolder
