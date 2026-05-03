@@ -44,20 +44,46 @@ docker compose down
 | API docs  | http://localhost:8000/docs  |
 | Prefect UI | http://localhost:4200     |
 
-### Run the pipeline (one command)
+**Docker dashboard:** Open **http://localhost:3000** — nginx serves the production build; **`/api/*` is proxied** to the `api` service. If nothing loads, run `docker compose ps` (frontend starts only after `api` is healthy) and `docker compose logs frontend`.
 
-With the stack up (`docker compose up …`), run ingestion + transforms **once**:
+---
+
+In a **second terminal** from the repo root (keep it open):
+
+```powershell
+docker compose --profile pipeline run pipeline --schedule
+```
+
+This registers the **full pipeline** deployment with Prefect and keeps a runner attached so **scheduled** runs can execute. You can also **trigger runs manually** from [Prefect UI](http://localhost:4200) → **Deployments**.
+
+---
+
+### Load data (ingestion)
+
+1. Bring the stack up (`docker compose up --build -d`) and start the scheduler command above.
+2. Open **Prefect UI** → **Deployments**.
+3. For **Adzuna** and **Remotive**, either wait for the **scheduled full pipeline** run or open that deployment and click **Run** so ingestion runs sooner.
+
+If **Historical seed** does not appear under Deployments, run Kaggle seed from the terminal once instead:
+
+```powershell
+docker compose --profile pipeline run --rm pipeline --seed
+```
+
+---
+
+### Run the full pipeline once (CLI)
+
+Ingest Adzuna + Remotive and refresh Silver/Gold in one shot:
 
 ```powershell
 docker compose --profile pipeline run --rm pipeline --once
 ```
 
-Other modes:
+Other CLI modes:
 
 ```powershell
-docker compose --profile pipeline run --rm pipeline --seed       # Kaggle seed only (Bronze)
-docker compose --profile pipeline run --rm pipeline --schedule # register schedule only
-docker compose --profile pipeline run --rm pipeline            # default pipeline.py behavior
+docker compose --profile pipeline run --rm pipeline            # immediate run + register cron (see pipeline.py)
 ```
 
 If `docker compose` is not found, try `docker-compose` instead.
