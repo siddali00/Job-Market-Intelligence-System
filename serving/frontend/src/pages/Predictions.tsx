@@ -1,38 +1,63 @@
-import { useState } from "react";
-import { predictSalary, type PredictResponse } from "../api/client";
+import { useEffect, useState } from "react";
+import {
+  fetchPredictOptions,
+  predictSalary,
+  type PredictResponse,
+  type PredictUiOptions,
+} from "../api/client";
 import { Brain, Loader2 } from "lucide-react";
 
-const SKILL_SUGGESTIONS = [
-  "python", "sql", "spark", "aws", "docker", "kubernetes",
-  "fastapi", "react", "tensorflow", "pytorch",
-];
-
 export default function Predictions() {
-  const [title, setTitle] = useState("");
-  const [location, setLocation] = useState("");
-  const [skillInput, setSkillInput] = useState("");
+  const [options, setOptions] = useState<PredictUiOptions | null>(null);
+  const [optionsError, setOptionsError] = useState<string | null>(null);
+
+  const [jobTitle, setJobTitle] = useState("");
+  const [industry, setIndustry] = useState("");
+  const [years, setYears] = useState(3);
+  const [remoteStatus, setRemoteStatus] = useState<"Remote" | "On-site">("On-site");
   const [skills, setSkills] = useState<string[]>([]);
-  const [remote, setRemote] = useState<boolean>(false);
+
   const [result, setResult] = useState<PredictResponse | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const addSkill = (skill: string) => {
-    const s = skill.trim().toLowerCase();
-    if (s && !skills.includes(s)) setSkills((prev) => [...prev, s]);
-    setSkillInput("");
-  };
+  useEffect(() => {
+    fetchPredictOptions()
+      .then((o) => {
+        setOptions(o);
+        setOptionsError(null);
+        if (o.job_titles.length) setJobTitle(o.job_titles[0]);
+        if (o.industries.length) setIndustry(o.industries[0]);
+        if (o.remote_options.length) {
+          const r = o.remote_options[0];
+          setRemoteStatus(r === "Remote" || r === "On-site" ? r : "On-site");
+        }
+      })
+      .catch((e: unknown) =>
+        setOptionsError(e instanceof Error ? e.message : "Could not load form options")
+      );
+  }, []);
 
-  const removeSkill = (skill: string) => setSkills((prev) => prev.filter((s) => s !== skill));
+  const toggleSkill = (s: string) => {
+    setSkills((prev) => (prev.includes(s) ? prev.filter((x) => x !== s) : [...prev, s]));
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!title || !location) return;
+    if (!jobTitle || !industry) return;
     setLoading(true);
     setError(null);
     try {
-      const res = await predictSalary({ title, location, skills, remote });
+      const res = await predictSalary({
+        years_of_experience: years,
+        job_title: jobTitle,
+        industry,
+        remote_status: remoteStatus,
+        selected_skills: skills,
+      });
       setResult(res);
+      if (res.status !== "ok") setError(res.message);
+      else setError(null);
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : "Request failed");
     } finally {
@@ -40,15 +65,29 @@ export default function Predictions() {
     }
   };
 
-  const fmt = (n: number | null) => n != null ? `$${Math.round(n).toLocaleString()}` : "—";
+  const fmt = (n: number | null) => (n != null ? `$${Math.round(n).toLocaleString()}` : "—");
+
+  const selectCls =
+    "w-full rounded-md border border-slate-700/90 bg-slate-950/60 px-3 py-2 text-sm text-slate-100 focus:outline-none focus:ring-1 focus:ring-sky-500/50";
 
   return (
     <div className="max-w-2xl">
       <p className="text-[10px] font-semibold uppercase tracking-wider text-sky-500/90"> What-if </p>
       <h1 className="mb-0.5 text-lg font-semibold text-slate-100">Salary prediction</h1>
       <p className="mb-4 text-xs text-slate-500">
-        Describe a role to estimate a range. The model activates after enough data and a training run.
       </p>
+
+      {optionsError && (
+        <div className="mb-4 rounded-lg border border-red-800/80 bg-red-950/30 px-3 py-2 text-sm text-red-300">
+          {optionsError}
+        </div>
+      )}
+
+      {!options && !optionsError && (
+        <div className="mb-4 flex items-center gap-2 text-sm text-slate-500">
+          <Loader2 className="h-4 w-4 animate-spin" /> Loading form options…
+        </div>
+      )}
 
       <form
         onSubmit={handleSubmit}
@@ -56,127 +95,137 @@ export default function Predictions() {
       >
         <div>
           <label className="mb-1 block text-[11px] text-slate-500">Job title *</label>
-          <input
+          <select
             required
-            value={title}
-            onChange={(e) => setTitle(e.target.value)}
-            placeholder="e.g. Data Engineer"
-            className="w-full rounded-md border border-slate-700/90 bg-slate-950/60 px-3 py-2 text-sm text-slate-100 placeholder:text-slate-600 focus:outline-none focus:ring-1 focus:ring-sky-500/50"
+            className={selectCls}
+            value={jobTitle}
+            onChange={(e) => setJobTitle(e.target.value)}
+            disabled={!options}
+          >
+            {(options?.job_titles ?? []).map((t) => (
+              <option key={t} value={t}>
+                {t}
+              </option>
+            ))}
+          </select>
+        </div>
+
+        <div>
+          <label className="mb-1 block text-[11px] text-slate-500">Industry *</label>
+          <select
+            required
+            className={selectCls}
+            value={industry}
+            onChange={(e) => setIndustry(e.target.value)}
+            disabled={!options}
+          >
+            {(options?.industries ?? []).map((t) => (
+              <option key={t} value={t}>
+                {t}
+              </option>
+            ))}
+          </select>
+        </div>
+
+        <div>
+          <label className="mb-1 block text-[11px] text-slate-500">
+            Years of experience: <span className="text-slate-300">{years.toFixed(1)}</span>
+          </label>
+          <input
+            type="range"
+            min={options?.experience_range?.[0] ?? 0}
+            max={options?.experience_range?.[1] ?? 30}
+            step={0.5}
+            value={years}
+            onChange={(e) => setYears(parseFloat(e.target.value))}
+            disabled={!options}
+            className="w-full accent-sky-500"
           />
         </div>
 
         <div>
-          <label className="mb-1 block text-[11px] text-slate-500">Location *</label>
-          <input
-            required
-            value={location}
-            onChange={(e) => setLocation(e.target.value)}
-            placeholder="e.g. San Francisco, CA or Remote"
-            className="w-full rounded-md border border-slate-700/90 bg-slate-950/60 px-3 py-2 text-sm text-slate-100 placeholder:text-slate-600 focus:outline-none focus:ring-1 focus:ring-sky-500/50"
-          />
+          <span className="mb-1 block text-[11px] text-slate-500">Workplace</span>
+          <div className="flex flex-wrap gap-3">
+            {(options?.remote_options ?? ["Remote", "On-site"]).map((r) => (
+              <label key={r} className="flex items-center gap-2 text-sm text-slate-300">
+                <input
+                  type="radio"
+                  name="remote"
+                  value={r}
+                  checked={remoteStatus === r}
+                  onChange={() => setRemoteStatus(r as "Remote" | "On-site")}
+                  disabled={!options}
+                  className="accent-sky-500"
+                />
+                {r}
+              </label>
+            ))}
+          </div>
         </div>
 
         <div>
-          <label className="mb-1 block text-[11px] text-slate-500">Skills</label>
-          <div className="flex gap-2 mb-2 flex-wrap">
-            {skills.map((s) => (
-              <span
-                key={s}
-                className="inline-flex items-center gap-1 rounded-full bg-sky-950/80 px-2 py-0.5 text-xs text-sky-300"
-              >
-                {s}
-                <button type="button" onClick={() => removeSkill(s)} className="hover:text-white">×</button>
-              </span>
-            ))}
+          <label className="mb-1 block text-[11px] text-slate-500">Skills (multi-select)</label>
+          <div className="flex max-h-40 flex-wrap gap-1.5 overflow-y-auto rounded-md border border-slate-800/80 bg-slate-950/40 p-2">
+            {(options?.available_skills ?? []).map((s) => {
+              const on = skills.includes(s);
+              return (
+                <button
+                  key={s}
+                  type="button"
+                  disabled={!options}
+                  onClick={() => toggleSkill(s)}
+                  className={`rounded px-2 py-0.5 text-xs transition-colors ${
+                    on
+                      ? "bg-sky-600 text-white"
+                      : "bg-slate-800/80 text-slate-400 hover:bg-slate-700 hover:text-slate-200"
+                  }`}
+                >
+                  {s}
+                </button>
+              );
+            })}
           </div>
-          <div className="flex gap-2">
-            <input
-              value={skillInput}
-              onChange={(e) => setSkillInput(e.target.value)}
-              onKeyDown={(e) => e.key === "Enter" && (e.preventDefault(), addSkill(skillInput))}
-              placeholder="Type a skill and press Enter"
-              className="flex-1 rounded-md border border-slate-700/90 bg-slate-950/60 px-3 py-2 text-sm text-slate-100 placeholder:text-slate-600 focus:outline-none focus:ring-1 focus:ring-sky-500/50"
-            />
-          </div>
-          <div className="flex flex-wrap gap-1.5 mt-2">
-            {SKILL_SUGGESTIONS.filter((s) => !skills.includes(s)).map((s) => (
-              <button
-                key={s}
-                type="button"
-                onClick={() => addSkill(s)}
-                className="rounded px-2 py-0.5 text-xs text-slate-500 transition-colors hover:bg-slate-800 hover:text-slate-200"
-              >
-                + {s}
-              </button>
-            ))}
-          </div>
-        </div>
-
-        <div className="flex items-center gap-2">
-          <input
-            type="checkbox"
-            id="remote"
-            checked={remote}
-            onChange={(e) => setRemote(e.target.checked)}
-            className="h-4 w-4 accent-sky-500"
-          />
-          <label htmlFor="remote" className="text-sm text-slate-300">Remote position</label>
         </div>
 
         <button
           type="submit"
-          disabled={loading}
+          disabled={loading || !options}
           className="flex w-full items-center justify-center gap-2 rounded-md bg-sky-600 py-2 font-medium text-white transition-colors hover:bg-sky-700 disabled:opacity-50"
         >
-          {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Brain className="w-4 h-4" />}
-          {loading ? "Predicting…" : "Predict Salary"}
+          {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Brain className="h-4 w-4" />}
+          {loading ? "Predicting…" : "Predict salary"}
         </button>
       </form>
 
       {error && (
-        <div className="mt-4 bg-red-900/30 border border-red-700 text-red-300 rounded-lg px-4 py-3 text-sm">{error}</div>
+        <div className="mt-4 rounded-lg border border-amber-800/80 bg-amber-950/20 px-4 py-3 text-sm text-amber-200/90">
+          {error}
+        </div>
       )}
 
-      {result && (
-        <div className={`mt-4 rounded-lg border p-6 ${
-          result.status === "ok"
-            ? "bg-green-900/20 border-green-700"
-            : "bg-gray-900 border-gray-700"
-        }`}>
-          <h2 className="text-sm font-semibold text-gray-300 mb-4">Prediction Result</h2>
-          {result.status === "ok" ? (
-            <div className="space-y-3">
-              <div className="flex justify-between items-center">
-                <span className="text-gray-400 text-sm">Predicted Range</span>
-                <span className="text-2xl font-bold text-green-400">
-                  {fmt(result.predicted_salary_min)} – {fmt(result.predicted_salary_max)}
-                </span>
+      {result && result.status === "ok" && (
+        <div className="mt-4 rounded-lg border border-green-800/80 bg-green-950/20 p-6">
+          <h2 className="mb-4 text-sm font-semibold text-slate-300">Prediction result</h2>
+          <div className="space-y-3">
+            {result.predicted_point != null && (
+              <div className="flex items-center justify-between">
+                <span className="text-sm text-slate-400">Point estimate (annual)</span>
+                <span className="text-xl font-bold text-green-400">{fmt(result.predicted_point)}</span>
               </div>
-              {result.confidence != null && (
-                <div className="flex justify-between items-center">
-                  <span className="text-gray-400 text-sm">Confidence</span>
-                  <span className="text-white">{(result.confidence * 100).toFixed(0)}%</span>
-                </div>
-              )}
-              {result.model_version && (
-                <div className="flex justify-between items-center">
-                  <span className="text-gray-400 text-sm">Model Version</span>
-                  <span className="text-gray-300 text-xs font-mono">{result.model_version}</span>
-                </div>
-              )}
+            )}
+            <div className="flex items-center justify-between">
+              <span className="text-sm text-slate-400">Approximate range (±12%)</span>
+              <span className="text-lg font-semibold text-green-300/90">
+                {fmt(result.predicted_salary_min)} – {fmt(result.predicted_salary_max)}
+              </span>
             </div>
-          ) : (
-            <div className="flex items-start gap-3">
-              <Brain className="w-5 h-5 text-gray-500 mt-0.5 shrink-0" />
-              <div>
-                <p className="text-gray-300 text-sm font-medium">Model not yet trained</p>
-                <p className="text-gray-500 text-sm mt-1">{result.message}</p>
-                <p className="text-gray-600 text-xs mt-2">
-                  Run <code className="bg-gray-800 px-1 rounded">python -m ml.train</code> after ingesting sufficient data.
-                </p>
+            {result.model_version && (
+              <div className="flex justify-between text-xs text-slate-500">
+                <span>Model</span>
+                <span className="font-mono">{result.model_version}</span>
               </div>
-            </div>
-          )}
+            )}
+          </div>
         </div>
       )}
     </div>

@@ -2,13 +2,13 @@
 ML model training stub.
 
 Trains a salary prediction model using the feature matrix from ml/features.py.
-Model and metrics are logged to MLflow.
+Models and metrics are saved under ``data/ml_artifacts`` (see ``ml.registry``).
 
 Usage:
     python -m ml.train --model ridge --test-size 0.2
 
 This is a stub — implement when you have enough labelled data (salary_min/max).
-The pipeline and MLflow wiring are already complete.
+The pipeline and on-disk artifact wiring are already complete.
 """
 
 import argparse
@@ -31,8 +31,7 @@ def train(model_type: str = "ridge", test_size: float = 0.2) -> dict[str, Any]:
       2. Split train/test
       3. Fit model
       4. Evaluate (MAE, RMSE, R²)
-      5. Log to MLflow
-      6. Save to registry
+      5. Save pipeline + metadata to disk (``ml.registry.log_model``)
 
     Returns metrics dict.
     """

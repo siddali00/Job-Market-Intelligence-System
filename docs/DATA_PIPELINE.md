@@ -116,7 +116,7 @@ React routes (`serving/frontend/src/App.tsx`):
 | **`/`** Dashboard | Snapshot cards, trending skills, top roles, salary highlights, co-occurrence teaser | `/api/overview/metrics`, `/api/skills/trending`, `/api/roles/top`, `/api/skills/cooccurrence`, `/api/salaries` → Gold + `jobs` |
 | **`/skills`** Skill trends | Year-over-year skill demand, rankings | `/api/skills/yearly` (uses `daily_skill_demand` and related logic in router) |
 | **`/salaries`** Salary explorer | Filterable salary bands by role/country | `/api/salaries` → `salary_summary` |
-| **`/predictions`** | Salary prediction UI | `/api/predict/salary` — **stub** until `ml/predict.py` is wired to a trained model |
+| **`/predictions`** | Salary prediction UI | `GET /api/predict/options` (dropdown JSON), `POST /api/predict/salary` (champion model in `model_package/`) |
 
 The API’s own description in `serving/api/main.py` states it serves insights from the **medallion** pipeline (`jobs` + Gold).
 

@@ -94,7 +94,11 @@ def _patch_missing_columns(engine) -> None:
 def _init_data_dirs() -> None:
     """Ensure Bronze and report directories exist so ingesters can write immediately."""
     from pathlib import Path
-    for path in [settings.bronze_storage_path, settings.ge_reports_path]:
+    for path in [
+        settings.bronze_storage_path,
+        settings.ge_reports_path,
+        settings.ml_artifacts_path,
+    ]:
         Path(path).mkdir(parents=True, exist_ok=True)
 
 

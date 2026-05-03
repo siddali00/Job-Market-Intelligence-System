@@ -39,8 +39,8 @@ class Settings(BaseSettings):
     # ── Prefect ───────────────────────────────────────────────────────────────
     prefect_api_url: str = "http://localhost:4200/api"
 
-    # ── MLflow ────────────────────────────────────────────────────────────────
-    mlflow_tracking_uri: str = "./data/mlruns"
+    # ── ML training artifacts (``python -m ml.train`` — joblib + JSON, no MLflow) ─
+    ml_artifacts_path: str = "./data/ml_artifacts"
 
     @property
     def cors_origins_list(self) -> list[str]:

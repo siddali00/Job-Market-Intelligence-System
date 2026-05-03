@@ -71,17 +71,26 @@ export interface RemoteData {
   remote_ratio: number | null;
 }
 
+export interface PredictUiOptions {
+  job_titles: string[];
+  industries: string[];
+  remote_options: string[];
+  available_skills: string[];
+  experience_range: [number, number];
+}
+
 export interface PredictRequest {
-  title: string;
-  location: string;
-  skills: string[];
-  remote?: boolean;
+  years_of_experience: number;
+  job_title: string;
+  industry: string;
+  remote_status: "Remote" | "On-site";
+  selected_skills: string[];
 }
 
 export interface PredictResponse {
   predicted_salary_min: number | null;
   predicted_salary_max: number | null;
-  confidence: number | null;
+  predicted_point: number | null;
   model_version: string | null;
   status: string;
   message: string;
@@ -171,6 +180,11 @@ export async function fetchRoleDemand(role?: string, startDate?: string, endDate
   if (startDate) params.start_date = startDate;
   if (endDate) params.end_date = endDate;
   const { data } = await api.get<{ data: RoleDemand[] }>("/api/roles/demand", { params });
+  return data;
+}
+
+export async function fetchPredictOptions() {
+  const { data } = await api.get<PredictUiOptions>("/api/predict/options");
   return data;
 }
 

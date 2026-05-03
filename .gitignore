@@ -28,7 +28,7 @@ alembic.ini
 # Prefect
 .prefect/
 
-# MLflow
+# Legacy MLflow local runs (optional; training now uses data/ml_artifacts under data/)
 mlruns/
 
 # Great Expectations

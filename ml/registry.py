@@ -1,12 +1,19 @@
 """
-MLflow model registry stubs.
+Persist trained sklearn pipelines to disk (joblib + JSON metadata).
 
-Handles experiment tracking, model versioning, and loading for inference.
-MLflow stores runs in data/mlruns/ locally (configured via MLFLOW_TRACKING_URI).
+The live salary UI uses ``model_package/`` champion weights via ``ml.predict``;
+this module supports ``python -m ml.train`` without pulling in MLflow (which
+conflicted with numpy>=2 for this project).
 """
 
 from __future__ import annotations
+
+import json
+import uuid
+from pathlib import Path
 from typing import Any
+
+import joblib
 
 from config.settings import get_settings
 from monitoring.logger import get_logger
@@ -14,53 +21,56 @@ from monitoring.logger import get_logger
 logger = get_logger(__name__)
 settings = get_settings()
 
-EXPERIMENT_NAME = "job-market-salary-prediction"
+
+def _artifacts_dir() -> Path:
+    p = Path(settings.ml_artifacts_path)
+    p.mkdir(parents=True, exist_ok=True)
+    return p
 
 
-def log_model(pipeline: Any, model_type: str, metrics: dict, feature_names: list[str]) -> str:
+def log_model(
+    pipeline: Any,
+    model_type: str,
+    metrics: dict,
+    feature_names: list[str],
+) -> str:
     """
-    Log a trained sklearn pipeline to MLflow.
-    Returns the run_id (used as model_version for inference).
+    Save ``pipeline`` as ``{run_id}.joblib`` and metrics/features as ``{run_id}.json``.
+    Returns ``run_id`` (UUID) for use as ``model_version``.
     """
-    import mlflow
-    import mlflow.sklearn
-
-    mlflow.set_tracking_uri(settings.mlflow_tracking_uri)
-    mlflow.set_experiment(EXPERIMENT_NAME)
-
-    with mlflow.start_run() as run:
-        mlflow.log_param("model_type", model_type)
-        mlflow.log_param("feature_count", len(feature_names))
-        for metric_name, value in metrics.items():
-            if isinstance(value, (int, float)):
-                mlflow.log_metric(metric_name, value)
-        mlflow.sklearn.log_model(pipeline, artifact_path="model", registered_model_name="salary_predictor")
-        run_id = run.info.run_id
-
-    logger.info("mlflow_run_logged", extra={"run_id": run_id, "metrics": metrics})
+    run_id = str(uuid.uuid4())
+    root = _artifacts_dir()
+    joblib.dump(pipeline, root / f"{run_id}.joblib")
+    meta = {
+        "model_type": model_type,
+        "metrics": metrics,
+        "feature_names": feature_names,
+    }
+    (root / f"{run_id}.json").write_text(
+        json.dumps(meta, indent=2, default=str),
+        encoding="utf-8",
+    )
+    logger.info("ml_artifact_saved", extra={"run_id": run_id, "model_type": model_type})
     return run_id
 
 
 def load_model(run_id: str | None = None) -> Any | None:
     """
-    Load the latest registered model (or a specific run_id) from MLflow.
-    Returns None if no model has been trained yet.
+    Load a pipeline from ``ml_artifacts_path``.
+
+    If ``run_id`` is given, load that file; otherwise load the most recently
+    modified ``*.joblib`` in the directory.
     """
-    import mlflow
-    import mlflow.sklearn
-    from mlflow.exceptions import MlflowException
-
-    mlflow.set_tracking_uri(settings.mlflow_tracking_uri)
-
-    try:
-        if run_id:
-            model_uri = f"runs:/{run_id}/model"
-        else:
-            model_uri = f"models:/salary_predictor/latest"
-        return mlflow.sklearn.load_model(model_uri)
-    except MlflowException:
-        logger.warning("mlflow_model_not_found", extra={"run_id": run_id})
+    root = _artifacts_dir()
+    if run_id:
+        path = root / f"{run_id}.joblib"
+        if path.is_file():
+            return joblib.load(path)
+        logger.warning("ml_artifact_not_found", extra={"run_id": run_id})
         return None
-    except Exception as exc:
-        logger.error("mlflow_load_error", extra={"error": str(exc)})
+
+    paths = sorted(root.glob("*.joblib"), key=lambda p: p.stat().st_mtime, reverse=True)
+    if not paths:
+        logger.warning("ml_artifact_no_models", extra={"dir": str(root)})
         return None
+    return joblib.load(paths[0])

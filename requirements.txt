@@ -13,7 +13,7 @@ alembic==1.13.1
 
 # ─── Data Processing ───────────────────────────────────────────────────────────
 pandas==2.2.2
-numpy==1.26.4
+numpy>=2.0.0,<2.2.0
 openpyxl>=3.1,<3.3        # Required for pandas read_excel (Kaggle XLSX datasets)
 pyspark>=3.4.0,<4.0.0     # Bronze→Silver dedup + cleaning (local[*] mode, requires Java 11+)
 
@@ -21,16 +21,17 @@ pyspark>=3.4.0,<4.0.0     # Bronze→Silver dedup + cleaning (local[*] mode, req
 prefect==2.19.3
 griffe==0.49.0       # Prefect 2.x incompatible with griffe >= 1.0 (removed griffe.dataclasses)
 
-# ─── Data Quality (Advanced Extension) ────────────────────────────────────────
-great-expectations==0.18.15
+# ─── Data Quality ─────────────────────────────────────────────────────────────
+# great-expectations was removed: 0.18.x requires numpy<2, which conflicts with the
+# bundled salary model (numpy>=2). Add `great-expectations>=1.0` yourself if you add GE suites.
 
 # ─── Kaggle Dataset Ingestion ──────────────────────────────────────────────────
 kaggle==1.6.14
 
 # ─── ML Scaffold ───────────────────────────────────────────────────────────────
-scikit-learn==1.4.2
-mlflow==2.12.2
+scikit-learn>=1.5.0,<1.6.0
 joblib==1.4.2
+# mlflow removed: 2.12.x pins numpy incompatible with numpy>=2 (champion model). Add mlflow yourself if you need it.
 
 # ─── Logging ───────────────────────────────────────────────────────────────────
 json-log-formatter==1.0

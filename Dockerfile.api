@@ -26,7 +26,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 COPY . .
 
-RUN mkdir -p data/bronze data/ge_reports data/mlruns
+RUN mkdir -p data/bronze data/ge_reports data/ml_artifacts
 
 EXPOSE 8000
 
