@@ -150,14 +150,12 @@ class BaseIngester(abc.ABC):
                   ds_salaries/    batch_0001.json
                   ai_market_2025/ batch_0001.json
         """
-        today = str(date.today())
-        directory = Path(settings.bronze_storage_path) / self.source_name / today
+        timestamp = str(datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S"))
+        directory = Path(settings.bronze_storage_path) / self.source_name / timestamp
         if subfolder:
             directory = directory / subfolder
-        directory.mkdir(parents=True, exist_ok=True)
-        timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
-        # file_path = directory / f"batch_{page:04d}.json"
-        file_path = directory / f"batch_{page:04d}_{timestamp}.json"
+        directory.mkdir(parents=True, exist_ok=True)        
+        file_path = directory / f"batch_{page:04d}.json"
         with open(file_path, "w", encoding="utf-8") as f:
             json.dump(records, f, ensure_ascii=False, default=str)
         logger.info(
